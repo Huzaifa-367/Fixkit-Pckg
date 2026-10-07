@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        channel: [stable]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ matrix.channel }}
+          cache: true
+      - run: flutter --version
+      - run: flutter pub get
+      - name: The version agrees everywhere
+        run: dart run tool/release.dart --check
+      - run: flutter analyze
+      - run: flutter test
+      - name: CLI runs
+        run: dart run fixkit help
+
+  example:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Analyze the demo app
+        working-directory: example
+        run: |
+          flutter pub get
+          flutter analyze
+      - name: init sets the demo up without touching its code twice
+        working-directory: example
+        run: |
+          dart run fixkit init --editors=cursor,vscode,claude
+          test -f .fixkit/mcp.dart
+          grep -q '"fixkit"' .cursor/mcp.json
+          grep -q '"fixkit"' .vscode/mcp.json
+          grep -q '"fixkit"' .mcp.json
+          grep -q 'fixkit:start' AGENTS.md
+          dart run fixkit init --editors=cursor,vscode,claude
+          test "$(grep -c 'FixKit(child' lib/main.dart)" = "1"
+      - name: The MCP server answers initialize over stdio
+        working-directory: example
+        run: |
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci"}}}' \
+            | timeout 60 dart .fixkit/mcp.dart > out.jsonl || true
+          cat out.jsonl
+          grep -q '"serverInfo"' out.jsonl
+      - name: doctor
+        working-directory: example
+        run: dart run fixkit doctor --start || true
+      - name: uninstall restores main.dart
+        working-directory: example
+        run: |
+          dart run fixkit uninstall
+          ! grep -q 'FixKit(' lib/main.dart

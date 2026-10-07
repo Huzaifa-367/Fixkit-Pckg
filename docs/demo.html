@@ -1,0 +1,1587 @@
+<title>fixkit Liquid Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: a floating glass stage over slow liquid colour. The phone (the package's in-app UI) and the agent's chat
+   sit side by side; a step rail and a data-flow strip run underneath. Setup and facts follow. */
+:root {
+  --bg: #e8ebf4;
+  --fg: #151827;
+  --muted: #59607a;
+  --glass: rgba(255, 255, 255, 0.52);
+  --glass-strong: rgba(255, 255, 255, 0.74);
+  --rim: rgba(255, 255, 255, 0.9);
+  --edge: rgba(21, 24, 39, 0.08);
+  --sheen: rgba(255, 255, 255, 0.55);
+  --shadow: rgba(40, 46, 90, 0.28);
+  --blob-a: #ff9e7d;
+  --blob-b: #8fd0ff;
+  --blob-c: #bba4ff;
+  --blob-d: #7fe8cf;
+  --blob-alpha: 0.75;
+  --tint: #d97757;
+  --tint-soft: rgba(217, 119, 87, 0.16);
+  --ok: #2e9d57;
+  --code: rgba(255, 255, 255, 0.62);
+  --code-fg: #22263a;
+  --add: rgba(46, 157, 87, 0.16);
+  --del: rgba(208, 59, 59, 0.13);
+
+  /* The app inside the phone keeps its own light palette in both themes. */
+  --app-bg: #f6f7fb;
+  --app-ink: #1f2430;
+  --app-muted: #6b7180;
+  --app-green: #2b8a3e;
+  --app-brand: #3b5bdb;
+  --app-brand-2: #7048e8;
+  --app-chip: #e7ecff;
+  --phone: #0c0e16;
+
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Onest", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #080a13;
+    --fg: #eceef8;
+    --muted: #9aa1bb;
+    --glass: rgba(255, 255, 255, 0.055);
+    --glass-strong: rgba(255, 255, 255, 0.1);
+    --rim: rgba(255, 255, 255, 0.2);
+    --edge: rgba(255, 255, 255, 0.09);
+    --sheen: rgba(255, 255, 255, 0.12);
+    --shadow: rgba(0, 0, 0, 0.6);
+    --blob-a: #ff6a45;
+    --blob-b: #2f7bff;
+    --blob-c: #8a55ff;
+    --blob-d: #12b886;
+    --blob-alpha: 0.42;
+    --tint-soft: rgba(217, 119, 87, 0.22);
+    --code: rgba(8, 10, 19, 0.55);
+    --code-fg: #dfe3f3;
+    --add: rgba(46, 157, 87, 0.24);
+    --del: rgba(208, 59, 59, 0.24);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #080a13;
+  --fg: #eceef8;
+  --muted: #9aa1bb;
+  --glass: rgba(255, 255, 255, 0.055);
+  --glass-strong: rgba(255, 255, 255, 0.1);
+  --rim: rgba(255, 255, 255, 0.2);
+  --edge: rgba(255, 255, 255, 0.09);
+  --sheen: rgba(255, 255, 255, 0.12);
+  --shadow: rgba(0, 0, 0, 0.6);
+  --blob-a: #ff6a45;
+  --blob-b: #2f7bff;
+  --blob-c: #8a55ff;
+  --blob-d: #12b886;
+  --blob-alpha: 0.42;
+  --tint-soft: rgba(217, 119, 87, 0.22);
+  --code: rgba(8, 10, 19, 0.55);
+  --code-fg: #dfe3f3;
+  --add: rgba(46, 157, 87, 0.24);
+  --del: rgba(208, 59, 59, 0.24);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+  overflow-x: hidden;
+}
+
+/* ---------- Liquid background ---------- */
+.liquid {
+  position: fixed;
+  inset: -20vmax;
+  z-index: 0;
+  pointer-events: none;
+  filter: blur(70px) saturate(130%);
+  opacity: var(--blob-alpha);
+}
+.liquid i {
+  position: absolute;
+  width: 46vmax;
+  height: 46vmax;
+  border-radius: 50%;
+  animation: drift 26s var(--ease) infinite alternate;
+}
+.liquid i:nth-child(1) { background: radial-gradient(circle at 40% 40%, var(--blob-a), transparent 65%); left: 18%; top: 14%; }
+.liquid i:nth-child(2) { background: radial-gradient(circle at 50% 50%, var(--blob-b), transparent 65%); right: 12%; top: 22%; animation-duration: 31s; animation-delay: -8s; }
+.liquid i:nth-child(3) { background: radial-gradient(circle at 50% 50%, var(--blob-c), transparent 65%); left: 34%; bottom: 8%; animation-duration: 23s; animation-delay: -4s; }
+.liquid i:nth-child(4) { background: radial-gradient(circle at 50% 50%, var(--blob-d), transparent 62%); right: 26%; bottom: 18%; animation-duration: 35s; animation-delay: -15s; width: 34vmax; height: 34vmax; }
+@keyframes drift {
+  0% { transform: translate(0, 0) scale(1); border-radius: 50% 46% 54% 50%; }
+  50% { transform: translate(6vmax, -4vmax) scale(1.12); border-radius: 42% 58% 46% 54%; }
+  100% { transform: translate(-5vmax, 5vmax) scale(0.94); border-radius: 56% 44% 52% 48%; }
+}
+
+.wrap {
+  position: relative;
+  z-index: 1;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding-inline: 20px;
+  padding-block: 28px 64px;
+  display: grid;
+  gap: 28px;
+}
+
+/* ---------- Glass ---------- */
+.glass {
+  position: relative;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(24px) saturate(170%);
+  backdrop-filter: blur(24px) saturate(170%);
+  border: 1px solid var(--edge);
+  border-radius: 28px;
+  box-shadow: inset 0 1px 0 var(--rim), inset 0 -1px 0 rgba(255, 255, 255, 0.04), 0 30px 60px -30px var(--shadow);
+}
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(140deg, var(--sheen), transparent 38%, transparent 70%, var(--sheen) 120%);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* ---------- Header ---------- */
+header.top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px 40px;
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.drop {
+  width: 34px;
+  height: 34px;
+  border-radius: 50% 50% 50% 8%;
+  transform: rotate(-45deg);
+  background: radial-gradient(circle at 34% 30%, #ffd9c9 0 12%, transparent 13%), linear-gradient(150deg, #f0a080, var(--tint) 55%, #a64f36);
+  box-shadow: inset -3px -4px 8px rgba(0, 0, 0, 0.18), 0 8px 20px -6px rgba(217, 119, 87, 0.6);
+}
+.wordmark { font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: -0.02em; }
+.wordmark small { font-family: var(--font-body); font-weight: 500; font-size: 13px; color: var(--muted); letter-spacing: 0; margin-left: 6px; }
+.lede { max-width: 640px; display: grid; gap: 8px; }
+h1 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(30px, 5vw, 52px);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  margin: 0;
+  text-wrap: balance;
+}
+h1 em { font-style: normal; color: var(--tint); }
+.lede p { margin: 0; color: var(--muted); max-width: 60ch; }
+
+/* ---------- Stage ---------- */
+.stage {
+  display: grid;
+  grid-template-columns: 324px minmax(0, 1fr);
+  gap: 24px;
+  padding: 24px;
+  border-radius: 36px;
+}
+.stage.paused *, .stage.paused *::before, .stage.paused *::after { animation-play-state: paused !important; }
+@media (max-width: 860px) {
+  .stage { grid-template-columns: minmax(0, 1fr); padding: 16px; justify-items: center; }
+}
+
+/* ---------- Phone ---------- */
+.phone-col { display: grid; justify-items: center; gap: 12px; }
+.phone {
+  width: 304px;
+  height: 640px;
+  padding: 10px;
+  border-radius: 52px;
+  background: linear-gradient(160deg, #2a2e3c, var(--phone) 30%, #05060a);
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.14) inset, 0 0 0 1px rgba(0, 0, 0, 0.5), 0 40px 80px -30px rgba(10, 12, 30, 0.7), 0 10px 30px -10px rgba(10, 12, 30, 0.5);
+  position: relative;
+  flex: none;
+}
+.screen {
+  position: relative;
+  width: 284px;
+  height: 620px;
+  border-radius: 42px;
+  overflow: hidden;
+  background: var(--app-bg);
+  color: var(--app-ink);
+  font-family: var(--font-body);
+  isolation: isolate;
+}
+.statusbar {
+  position: absolute;
+  z-index: 25;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 26px 0 30px;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  transition: color 0.3s;
+}
+.screen.composing .statusbar { color: #fff; }
+.sb-icons { display: flex; gap: 5px; align-items: center; }
+.sb-icons b { display: block; width: 3px; border-radius: 1px; background: currentColor; }
+.sb-icons b:nth-child(1) { height: 4px; } .sb-icons b:nth-child(2) { height: 6px; } .sb-icons b:nth-child(3) { height: 8px; } .sb-icons b:nth-child(4) { height: 10px; }
+.sb-batt { width: 22px; height: 11px; border: 1.4px solid currentColor; border-radius: 3.5px; padding: 1.4px; margin-left: 4px; }
+.sb-batt::after { content: ""; display: block; height: 100%; width: 78%; background: currentColor; border-radius: 1.5px; }
+
+/* The app (Tally) */
+.app {
+  position: absolute;
+  inset: 0;
+  transition: transform 0.42s var(--ease), filter 0.4s;
+  will-change: transform;
+}
+.app-body { padding: 50px 16px 0; display: grid; gap: 0; }
+.hello { margin: 0; font-size: 12px; color: var(--app-muted); }
+.wallet-title { margin: 1px 0 12px; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; font-family: var(--font-body); }
+.wcard {
+  height: 132px;
+  border-radius: 20px;
+  padding: 16px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--app-brand), var(--app-brand-2));
+  box-shadow: 0 14px 26px -14px rgba(59, 91, 219, 0.75);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+.wcard::after {
+  content: "";
+  position: absolute;
+  width: 180px;
+  height: 180px;
+  right: -60px;
+  top: -80px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.28), transparent 65%);
+}
+.wc-top { display: flex; justify-content: space-between; font-size: 11px; font-weight: 800; letter-spacing: 0.16em; }
+.wc-top i { font-style: italic; letter-spacing: 0.02em; }
+.wc-num { margin-top: auto; font-size: 14px; letter-spacing: 0.14em; font-weight: 600; font-variant-numeric: tabular-nums; }
+.wc-bottom { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 10px; }
+.wc-label { font-size: 8.5px; letter-spacing: 0.08em; opacity: 0.72; }
+.wc-val { font-size: 12px; font-weight: 600; }
+.wc-holder { width: 96px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qa { display: flex; justify-content: space-between; margin: 14px 0 12px; }
+.qa-btn { display: grid; justify-items: center; gap: 5px; font-size: 10.5px; font-weight: 600; }
+.qa-btn span.ic {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  background: #dfe5ff;
+  color: #2b3d9c;
+  border-radius: 15px;
+  font-size: 18px;
+  font-weight: 600;
+}
+.qa-btn.shifted { margin-left: 10px; }
+.qa-btn.square span.ic { border-radius: 4px; }
+.recent { margin: 2px 0 2px; font-size: 14px; font-weight: 700; font-family: var(--font-body); }
+.tx { display: flex; align-items: center; gap: 10px; height: 46px; }
+.tx .av {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--app-chip);
+  color: var(--app-brand);
+  font-size: 12px;
+  font-weight: 700;
+  flex: none;
+}
+.tx .who { display: grid; min-width: 0; flex: 1; line-height: 1.25; }
+.tx .who b { font-size: 12.5px; font-weight: 600; }
+.tx .who span { font-size: 11px; color: var(--app-muted); }
+.amt { font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; transition: color 0.7s var(--ease); padding: 2px 0; }
+/* The seeded bug: the colour test is the wrong way round. */
+.amt.income { color: var(--app-ink); }
+.amt.spend { color: var(--app-green); }
+.app.fixed .amt.income { color: var(--app-green); }
+.app.fixed .amt.spend { color: var(--app-ink); }
+.tabbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 62px;
+  padding-bottom: 12px;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.85);
+  border-top: 1px solid rgba(31, 36, 48, 0.06);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--app-muted);
+}
+.tabbar span { display: grid; justify-items: center; gap: 3px; }
+.tabbar span::before { content: ""; width: 34px; height: 18px; border-radius: 9px; }
+.tabbar span.on { color: var(--app-ink); }
+.tabbar span.on::before { background: #dfe5ff; }
+.home-ind { position: absolute; z-index: 40; bottom: 7px; left: 50%; width: 104px; height: 4px; margin-left: -52px; border-radius: 3px; background: rgba(0, 0, 0, 0.75); transition: background 0.3s; }
+.screen.composing .home-ind { background: rgba(255, 255, 255, 0.8); }
+
+/* ---------- fixkit in-app UI ---------- */
+
+/* Dim with a hole; the hole is a clip-path set from script. */
+.dim {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: rgba(8, 10, 20, 0.62);
+  opacity: 0;
+  transition: opacity 0.3s var(--ease);
+  pointer-events: none;
+}
+.screen.composing .dim { opacity: 1; }
+.spot {
+  position: absolute;
+  z-index: 11;
+  border-radius: 12px;
+  opacity: 0;
+  transform: scale(1.18);
+  transition: opacity 0.3s, transform 0.5s var(--spring);
+  pointer-events: none;
+}
+.spot::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 14px;
+  padding: 2px;
+  background: conic-gradient(from var(--spin), #ff8a65, #b388ff, #4fc3f7, #5eead4, #ff8a65);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: turn 2.4s linear infinite;
+}
+.spot::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 14px;
+  box-shadow: 0 0 14px 2px rgba(179, 136, 255, 0.75), 0 0 28px 4px rgba(255, 138, 101, 0.35);
+  animation: halo 1.8s ease-in-out infinite;
+}
+@keyframes halo { 50% { box-shadow: 0 0 20px 4px rgba(79, 195, 247, 0.7), 0 0 34px 6px rgba(179, 136, 255, 0.4); } }
+.screen.composing .spot { opacity: 1; transform: scale(1); }
+.chip {
+  position: absolute;
+  z-index: 12;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  background: linear-gradient(90deg, rgba(255, 138, 101, 0.92), rgba(179, 136, 255, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 8px 18px -8px rgba(179, 136, 255, 0.9);
+  opacity: 0;
+  transform: translateY(8px) scale(0.9);
+  transition: opacity 0.3s 0.12s, transform 0.5s 0.12s var(--spring);
+  pointer-events: none;
+}
+.screen.composing .chip { opacity: 1; transform: none; }
+
+/* Agent colours: orb, edge glow, send. */
+@property --spin { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+@keyframes turn { to { --spin: 360deg; } }
+.orb {
+  position: relative;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: conic-gradient(from var(--spin), #ff8a65, #b388ff, #4fc3f7, #5eead4, #ff8a65);
+  box-shadow: 0 0 12px rgba(179, 136, 255, 0.55);
+  animation: turn 3.6s linear infinite;
+}
+.orb::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.8), transparent 42%), radial-gradient(circle at 72% 74%, rgba(79, 195, 247, 0.55), transparent 55%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+.orb.busy { animation: turn 1.4s linear infinite, breathe 1.3s ease-in-out infinite; box-shadow: 0 0 16px rgba(179, 136, 255, 0.8); }
+.orb.ok { background: conic-gradient(from var(--spin), #86efac, #22c55e, #14b8a6, #86efac); box-shadow: 0 0 14px rgba(34, 197, 94, 0.7); }
+@keyframes breathe { 50% { transform: scale(1.1); } }
+
+/* The screen edge glows while fixkit has the agent's attention. */
+.aura { position: absolute; inset: 0; z-index: 16; border-radius: 42px; pointer-events: none; opacity: 0; transition: opacity 0.6s var(--ease); }
+.aura::before, .aura::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 3px;
+  background: conic-gradient(from var(--spin), #ff8a65, #b388ff, #4fc3f7, #5eead4, #ff8a65);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: turn 5s linear infinite;
+}
+.aura::after { padding: 16px; filter: blur(12px); opacity: 0.85; }
+.screen.aura-strong .aura { opacity: 1; }
+.screen.aura-soft .aura { opacity: 0.55; }
+
+/* The composer: who is watching, suggestions, the prompt. */
+.composer {
+  position: absolute;
+  z-index: 14;
+  left: 10px;
+  right: 10px;
+  bottom: 214px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+  opacity: 0;
+  transform: translateY(260px);
+  transition: transform 0.45s var(--ease), opacity 0.25s;
+}
+.screen.composing .composer { opacity: 1; transform: none; }
+.dglass {
+  background: linear-gradient(135deg, rgba(40, 43, 60, 0.82), rgba(22, 24, 36, 0.86));
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 10px 24px -10px rgba(0, 0, 0, 0.6);
+  color: #fff;
+}
+.scopes { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.step-btn { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 15px; font-weight: 700; transition: opacity 0.2s, transform 0.2s var(--spring); }
+.step-btn.off { opacity: 0.35; }
+.step-btn.tap { transform: scale(0.85); box-shadow: 0 0 0 1.5px #b388ff, 0 0 12px rgba(179, 136, 255, 0.8); }
+.crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 3px; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); }
+.crumb { flex: none; padding: 5px 9px; border-radius: 13px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; color: #fff; background: linear-gradient(135deg, rgba(42, 45, 64, 0.85), rgba(26, 28, 40, 0.85)); border: 1px solid rgba(255, 255, 255, 0.14); transition: background 0.25s, box-shadow 0.25s; }
+.crumb.on { font-weight: 700; background: linear-gradient(90deg, rgba(255, 138, 101, 0.92), rgba(179, 136, 255, 0.92)); border-color: rgba(255, 255, 255, 0.5); box-shadow: 0 0 10px rgba(179, 136, 255, 0.6); }
+.crumbs i { flex: none; color: rgba(255, 255, 255, 0.5); font-style: normal; font-size: 11px; font-weight: 700; }
+.presence { justify-self: start; display: flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 12px; font-size: 10.5px; font-weight: 500; max-width: 100%; }
+.presence i { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 8px rgba(74, 222, 128, 0.8); flex: none; }
+.presence span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: rgba(255, 255, 255, 0.86); }
+.sugs { display: flex; gap: 5px; overflow: hidden; min-width: 0; -webkit-mask-image: linear-gradient(90deg, #000 80%, transparent); mask-image: linear-gradient(90deg, #000 80%, transparent); }
+.sug.badge { display: flex; align-items: center; gap: 6px; color: rgba(255, 255, 255, 0.88); }
+.sug.badge i { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 8px rgba(74, 222, 128, 0.8); }
+.sug { flex: none; padding: 6px 11px; border-radius: 15px; font-size: 11px; font-weight: 500; transition: transform 0.25s var(--spring), box-shadow 0.25s; }
+.sug.pick { transform: scale(0.94); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 0 0 1.5px #b388ff, 0 0 14px rgba(179, 136, 255, 0.7); }
+.bar {
+  height: 50px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 6px 0 9px;
+  border-radius: 25px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 0 22px -4px rgba(179, 136, 255, 0.65), 0 14px 30px -10px rgba(0, 0, 0, 0.6);
+}
+.bar .field { flex: 1; min-width: 0; font-size: 13px; white-space: nowrap; overflow: hidden; }
+.bar .field .ph { color: rgba(255, 255, 255, 0.55); }
+.caret { display: inline-block; width: 1.5px; height: 15px; margin-left: 1px; vertical-align: -2px; background: #b388ff; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.send {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+  font-weight: 800;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  transition: box-shadow 0.3s, transform 0.2s var(--spring);
+  flex: none;
+}
+.send.ready { background: conic-gradient(from 200deg, #ff8a65, #b388ff, #4fc3f7, #5eead4, #ff8a65); box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.6), 0 0 16px rgba(179, 136, 255, 0.8); }
+.send.press { transform: scale(0.82); }
+
+/* Keyboard */
+.keyboard {
+  position: absolute;
+  z-index: 13;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 206px;
+  padding: 10px 4px 34px;
+  display: grid;
+  grid-template-rows: repeat(4, 1fr);
+  gap: 9px;
+  background: rgba(206, 211, 222, 0.82);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+  border-top: 1px solid rgba(255, 255, 255, 0.7);
+  transform: translateY(100%);
+  transition: transform 0.42s var(--ease);
+}
+.screen.composing .keyboard { transform: none; }
+.krow { display: flex; justify-content: center; gap: 4px; }
+.key {
+  flex: 0 0 23px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  background: #fff;
+  color: #1c1f2a;
+  font-size: 13px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.28);
+  transition: transform 0.12s, background 0.12s;
+}
+.key.wide { flex: 0 0 36px; background: #aeb4c2; font-size: 10px; }
+.key.space { flex: 0 0 128px; font-size: 10px; color: #525866; }
+.key.go { flex: 0 0 52px; background: #aeb4c2; font-size: 10px; }
+.key.hit { background: #d6dae4; transform: translateY(-3px) scale(1.15); }
+
+/* Finger with the long-press ring */
+.finger {
+  position: absolute;
+  z-index: 20;
+  width: 56px;
+  height: 56px;
+  margin: -28px 0 0 -28px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.25) 60%, rgba(255, 255, 255, 0.08));
+  border: 1.5px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 6px 18px -4px rgba(20, 24, 40, 0.45), inset 0 -4px 10px rgba(20, 24, 40, 0.12);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  transform: scale(1.5);
+  transition: opacity 0.25s, transform 0.4s var(--spring);
+  pointer-events: none;
+}
+.finger.on { opacity: 1; transform: scale(1); }
+.finger svg { position: absolute; inset: -6px; width: 68px; height: 68px; transform: rotate(-90deg); overflow: visible; }
+.finger circle { fill: none; stroke: var(--tint); stroke-width: 3.5; stroke-linecap: round; stroke-dasharray: 201; stroke-dashoffset: 201; }
+.finger.press circle { animation: ring 0.62s linear forwards; }
+@keyframes ring { to { stroke-dashoffset: 0; } }
+.finger::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid rgba(217, 119, 87, 0.8);
+  opacity: 0;
+}
+.finger.burst::after { animation: burst 0.6s var(--ease) forwards; }
+@keyframes burst { 0% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.9); } }
+
+/* The agent card: a liquid drop that grows out of the camera island. */
+.island {
+  position: absolute;
+  z-index: 30;
+  top: 10px;
+  left: 50%;
+  width: 86px;
+  height: 26px;
+  margin-left: -43px;
+  border-radius: 14px;
+  background: #000;
+  overflow: hidden;
+  transition: width 0.6s var(--spring), height 0.6s var(--spring), margin-left 0.6s var(--spring), border-radius 0.6s var(--spring), top 0.6s var(--spring), background 0.4s, box-shadow 0.5s;
+}
+.island.open {
+  width: 264px;
+  margin-left: -132px;
+  top: 8px;
+  border-radius: 22px;
+  background: linear-gradient(140deg, rgba(42, 45, 64, 0.9), rgba(18, 20, 31, 0.92));
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  backdrop-filter: blur(22px) saturate(160%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 0 26px -6px rgba(179, 136, 255, 0.85), 0 16px 30px -12px rgba(0, 0, 0, 0.6);
+}
+.island.open.ok { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 0 26px -6px rgba(34, 197, 94, 0.85), 0 16px 30px -12px rgba(0, 0, 0, 0.6); }
+.island.morph { animation: squish 0.5s var(--spring); }
+@keyframes squish { 0% { transform: scale(1, 1); } 30% { transform: scale(1.05, 0.92); } 60% { transform: scale(0.99, 1.03); } 100% { transform: scale(1, 1); } }
+.card-in { width: 264px; padding: 11px 12px 12px; color: #fff; opacity: 0; transition: opacity 0.2s; }
+.island.open .card-in { opacity: 1; transition: opacity 0.3s 0.18s; }
+.ch { display: flex; align-items: center; gap: 9px; }
+.ch .orb { width: 26px; height: 26px; }
+.ct { display: grid; min-width: 0; flex: 1; line-height: 1.25; }
+.ct b { font-size: 13px; font-weight: 600; }
+.ct span { font-size: 10.5px; color: rgba(255, 255, 255, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cx { color: rgba(255, 255, 255, 0.55); font-size: 12px; font-weight: 700; padding: 0 4px; }
+.csteps { list-style: none; margin: 9px 0 0; padding: 0 0 0 4px; display: grid; gap: 5px; }
+.csteps li { display: flex; gap: 9px; align-items: flex-start; font-size: 11px; line-height: 1.35; color: rgba(255, 255, 255, 0.82); }
+.csteps li.new { animation: stepin 0.45s var(--ease) both; }
+@keyframes stepin { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.csteps li i { flex: none; width: 14px; height: 14px; margin-top: 1px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 8.5px; font-weight: 800; color: #4ade80; background: rgba(74, 222, 128, 0.18); }
+.csteps li.active { color: #fff; }
+.csteps li.active i { background: none; border: 1.8px solid rgba(179, 136, 255, 0.25); border-top-color: #b388ff; border-right-color: #4fc3f7; animation: spin 0.8s linear infinite; }
+.csteps li.final { color: #fff; font-weight: 600; }
+.csum { position: relative; margin-top: 9px; padding: 8px 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(34, 197, 94, 0.5); font-size: 11.5px; line-height: 1.4; }
+.csum .ghost { visibility: hidden; }
+.csum .typed { position: absolute; inset: 8px 10px; }
+.spin { width: 17px; height: 17px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.35); border-top-color: #fff; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Hot reload: a band of liquid light runs down the screen. */
+.sweep {
+  position: absolute;
+  z-index: 9;
+  left: -10%;
+  right: -10%;
+  height: 180px;
+  top: -200px;
+  background: linear-gradient(180deg, transparent, rgba(160, 200, 255, 0.25) 35%, rgba(255, 255, 255, 0.85) 50%, rgba(255, 190, 160, 0.3) 65%, transparent);
+  -webkit-backdrop-filter: blur(2px) hue-rotate(20deg);
+  backdrop-filter: blur(2px) hue-rotate(20deg);
+  transform: skewY(-8deg);
+  pointer-events: none;
+  opacity: 0;
+}
+.sweep.run { animation: sweep 1.15s var(--ease) forwards; }
+@keyframes sweep { 0% { top: -200px; opacity: 1; } 85% { opacity: 1; } 100% { top: 660px; opacity: 0; } }
+
+.phone, .step, .ed, .btn, .flow { -webkit-user-select: none; user-select: none; }
+.phone-caption { font-size: 12px; color: var(--muted); text-align: center; max-width: 300px; }
+.phone-caption code { font-family: var(--font-mono); font-size: 11px; }
+
+/* ---------- Agent panel ---------- */
+.agent-col { display: grid; gap: 12px; min-width: 0; width: 100%; align-content: start; }
+.editors { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.editors .lbl { font-size: 12px; color: var(--muted); margin-right: 4px; }
+.ed {
+  font: 500 12.5px/1 var(--font-body);
+  color: var(--fg);
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--edge);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  cursor: pointer;
+  transition: background 0.25s, box-shadow 0.25s, transform 0.2s var(--spring);
+}
+.ed:hover { transform: translateY(-1px); }
+.ed[aria-pressed="true"] { background: var(--glass-strong); box-shadow: inset 0 1px 0 var(--rim), 0 0 0 1.5px var(--tint); }
+.ed:focus-visible, .btn:focus-visible, .step:focus-visible, .copy:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
+
+.agent {
+  height: 566px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border-radius: 26px;
+}
+.agent-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--edge);
+}
+.agent-head .title { font-weight: 600; font-size: 14px; }
+.agent-head .mcp {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--glass);
+  border: 1px solid var(--edge);
+}
+.dot-live { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 rgba(46, 157, 87, 0.6); animation: live 2s infinite; }
+@keyframes live { 0% { box-shadow: 0 0 0 0 rgba(46, 157, 87, 0.55); } 70% { box-shadow: 0 0 0 7px rgba(46, 157, 87, 0); } 100% { box-shadow: 0 0 0 0 rgba(46, 157, 87, 0); } }
+.chat { position: relative; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 12px; scroll-behavior: smooth; }
+.msg { max-width: 92%; font-size: 13.5px; line-height: 1.5; }
+.msg.new { animation: pop 0.55s var(--spring) both; }
+@keyframes pop { 0% { opacity: 0; transform: translateY(12px) scale(0.96); filter: blur(4px); } 100% { opacity: 1; transform: none; filter: none; } }
+.msg.user {
+  align-self: flex-end;
+  padding: 9px 14px;
+  border-radius: 18px 18px 6px 18px;
+  background: linear-gradient(135deg, rgba(217, 119, 87, 0.95), rgba(190, 95, 65, 0.95));
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 8px 20px -10px rgba(217, 119, 87, 0.8);
+}
+.msg.bot { align-self: flex-start; color: var(--fg); }
+.msg.bot p { margin: 0; }
+.tool {
+  align-self: stretch;
+  max-width: 100%;
+  border-radius: 16px;
+  background: var(--glass-strong);
+  border: 1px solid var(--edge);
+  box-shadow: inset 0 1px 0 var(--rim);
+  overflow: hidden;
+}
+.tool-head { display: flex; align-items: center; gap: 9px; padding: 9px 12px; font-size: 12.5px; }
+.tool-head .fn { font-family: var(--font-mono); font-weight: 600; font-size: 12px; }
+.tool-head .srv { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.tool-head .state { margin-left: auto; font-size: 11.5px; color: var(--muted); display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.tool-head .state.ok { color: var(--ok); font-weight: 600; }
+.tool .spin { width: 13px; height: 13px; border-color: var(--edge); border-top-color: var(--tint); }
+.tool .ico { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; background: var(--tint-soft); color: var(--tint); font-size: 12px; font-weight: 700; flex: none; }
+.tool-body { padding: 0 12px 12px; display: grid; gap: 10px; }
+.tool-body.row { grid-template-columns: minmax(0, 1fr) 64px; align-items: start; }
+pre.prompt, .diff {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--code-fg);
+  background: var(--code);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-width: 0;
+}
+.diff { white-space: normal; }
+.diff .ln span { white-space: pre-wrap; word-break: break-word; }
+.msg.tool-wrap { max-width: 100%; }
+.msg.bot code { font-family: var(--font-mono); font-size: 12px; padding: 1px 5px; border-radius: 6px; background: var(--code); border: 1px solid var(--edge); }
+pre.prompt .hl { color: var(--tint); font-weight: 600; }
+pre.prompt .comment { font-family: var(--font-body); font-size: 12.5px; font-weight: 600; }
+.shot {
+  width: 64px;
+  height: 128px;
+  border-radius: 10px;
+  background: #f6f7fb;
+  border: 1px solid var(--edge);
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 8px 18px -10px var(--shadow);
+}
+.shot i { position: absolute; left: 6px; right: 6px; border-radius: 3px; background: #dfe3ee; }
+.shot i.card { top: 16px; height: 28px; background: linear-gradient(135deg, #3b5bdb, #7048e8); }
+.shot i.r1 { top: 50px; height: 9px; }
+.shot i.r2 { top: 66px; height: 5px; right: 30px; }
+.shot i.r3 { top: 80px; height: 5px; right: 24px; }
+.shot i.r4 { top: 94px; height: 5px; right: 28px; }
+.shot b { position: absolute; top: 76px; right: 3px; width: 20px; height: 12px; border: 1.5px solid #ff3b30; border-radius: 4px; }
+.shot span { position: absolute; bottom: 3px; left: 0; right: 0; text-align: center; font: 500 8px/1 var(--font-mono); color: #6b7180; }
+.diff { padding: 0; overflow: hidden; }
+.diff .file { padding: 8px 12px; border-bottom: 1px solid var(--edge); color: var(--muted); font-size: 10.5px; }
+.diff .ln { display: grid; grid-template-columns: 28px 14px minmax(0, 1fr); padding: 0 12px 0 0; }
+.diff .ln span:first-child { text-align: right; padding-right: 8px; color: var(--muted); opacity: 0.7; }
+.diff .ln.del { background: var(--del); }
+.diff .ln.add { background: var(--add); }
+.diff .ln.add.new { animation: inkin 0.9s var(--ease) both; }
+@keyframes inkin { 0% { background: rgba(46, 157, 87, 0.5); } 100% { background: var(--add); } }
+.agent-input {
+  position: relative;
+  margin: 0 14px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: 16px;
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  color: var(--muted);
+  font-size: 13px;
+}
+.agent-input kbd { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; padding: 3px 7px; border-radius: 6px; border: 1px solid var(--edge); background: var(--glass); }
+
+/* ---------- Rail + flow ---------- */
+.below { grid-column: 1 / -1; display: grid; gap: 14px; min-width: 0; width: 100%; }
+.rail { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.controls { display: flex; gap: 6px; }
+.btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--edge);
+  background: var(--glass-strong);
+  color: var(--fg);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 var(--rim);
+  transition: transform 0.2s var(--spring);
+}
+.btn:hover { transform: scale(1.06); }
+.btn svg { width: 15px; height: 15px; fill: currentColor; }
+.steps { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 0; padding: 0; margin: 0; list-style: none; }
+.step {
+  position: relative;
+  overflow: hidden;
+  font: 500 12.5px/1 var(--font-body);
+  color: var(--muted);
+  padding: 9px 12px 9px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--edge);
+  background: var(--glass);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  transition: color 0.25s, background 0.25s;
+}
+.step .n { font-family: var(--font-mono); font-size: 10.5px; opacity: 0.7; }
+.step .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, var(--tint-soft), rgba(217, 119, 87, 0.32)); border-radius: inherit; z-index: 0; }
+.step span { position: relative; z-index: 1; }
+.step.done { color: var(--fg); }
+.step.on { color: var(--fg); background: var(--glass-strong); box-shadow: inset 0 1px 0 var(--rim), 0 0 0 1.5px rgba(217, 119, 87, 0.65); }
+
+.flow-wrap { overflow-x: auto; border-radius: 22px; }
+.flow {
+  min-width: 560px;
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr auto 1fr auto;
+  align-items: center;
+  padding: 16px 18px;
+  border-radius: 22px;
+}
+.node {
+  position: relative;
+  display: grid;
+  gap: 1px;
+  padding: 9px 14px;
+  border-radius: 16px;
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  transition: box-shadow 0.4s, background 0.4s, transform 0.4s var(--spring);
+  text-align: center;
+}
+.node b { font-family: var(--font-display); font-weight: 700; font-size: 14px; }
+.node span { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+.node.on { background: var(--glass-strong); box-shadow: inset 0 1px 0 var(--rim), 0 0 0 1.5px var(--tint), 0 0 22px -4px rgba(217, 119, 87, 0.7); transform: translateY(-2px); }
+.wire { position: relative; height: 34px; margin: 0 6px; }
+.wire::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px; border-radius: 2px; background: var(--edge); }
+.wire.on::before { background: linear-gradient(90deg, transparent, rgba(217, 119, 87, 0.55), transparent); background-size: 200% 100%; animation: flowline 1.2s linear infinite; }
+.wire.wait::before { background: repeating-linear-gradient(90deg, rgba(217, 119, 87, 0.5) 0 6px, transparent 6px 12px); background-size: 24px 2px; animation: dash 1s linear infinite; }
+@keyframes flowline { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@keyframes dash { to { background-position: 24px 0; } }
+.wire .bead {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50% 50% 50% 50%;
+  background: radial-gradient(circle at 35% 30%, #ffd6c6, var(--tint) 60%, #a9533a);
+  box-shadow: 0 0 14px rgba(217, 119, 87, 0.9);
+  opacity: 0;
+}
+.wire.on .bead { animation: bead 1.2s var(--ease) infinite; }
+.wire.on.rev .bead { animation-name: beadrev; }
+@keyframes bead { 0% { left: 0; opacity: 0; transform: scale(0.6, 0.6); } 15% { opacity: 1; } 50% { transform: scale(1.35, 0.75); } 85% { opacity: 1; } 100% { left: 100%; opacity: 0; transform: scale(0.6, 0.6); } }
+@keyframes beadrev { 0% { left: 100%; opacity: 0; transform: scale(0.6, 0.6); } 15% { opacity: 1; } 50% { transform: scale(1.35, 0.75); } 85% { opacity: 1; } 100% { left: 0; opacity: 0; transform: scale(0.6, 0.6); } }
+.wire em { position: absolute; left: 0; right: 0; top: -4px; text-align: center; font: 500 10px/1 var(--font-mono); font-style: normal; color: var(--muted); opacity: 0; transition: opacity 0.3s; white-space: nowrap; }
+.wire.on em, .wire.wait em { opacity: 1; }
+.caption { margin: 0; font-size: 14px; min-height: 2.6em; display: flex; gap: 10px; align-items: baseline; }
+.caption .k { font-family: var(--font-mono); font-size: 11px; color: var(--tint); white-space: nowrap; }
+
+/* ---------- Setup + facts ---------- */
+.lower { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 24px; }
+@media (max-width: 860px) { .lower { grid-template-columns: minmax(0, 1fr); } }
+.card { padding: 22px; display: grid; gap: 14px; align-content: start; }
+h2 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: -0.02em; }
+.eyebrow { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.term { position: relative; border-radius: 18px; background: var(--code); border: 1px solid var(--edge); font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--code-fg); overflow-x: auto; }
+.term-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--edge); color: var(--muted); font-size: 11px; }
+.term-body { padding: 12px 14px; white-space: pre; }
+.term .p { color: var(--tint); }
+.term .ok { color: var(--ok); }
+.term .dim { color: var(--muted); }
+.copy { margin-left: auto; font: 500 11px/1 var(--font-body); padding: 6px 10px; border-radius: 999px; border: 1px solid var(--edge); background: var(--glass-strong); color: var(--fg); cursor: pointer; }
+.say { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; }
+.say q { quotes: none; font-family: var(--font-mono); font-size: 13px; padding: 6px 12px; border-radius: 999px; background: var(--tint-soft); color: var(--fg); border: 1px solid rgba(217, 119, 87, 0.35); }
+.facts { display: grid; gap: 12px; }
+.fact { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; padding: 12px 0; border-top: 1px solid var(--edge); font-size: 13.5px; }
+.fact:first-of-type { border-top: 0; padding-top: 0; }
+.fact dt { font-weight: 600; }
+.fact dd { margin: 0; color: var(--muted); }
+.devices { display: grid; gap: 6px; }
+.dev { display: flex; justify-content: space-between; gap: 10px; }
+.dev span:last-child { font-family: var(--font-mono); font-size: 11.5px; color: var(--fg); text-align: right; }
+footer { font-size: 12px; color: var(--muted); text-align: center; }
+footer a { color: inherit; }
+
+@media (max-width: 480px) {
+  .wrap { padding-inline: 16px; }
+  .agent { height: 520px; }
+  .fact { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .tool-body.row { grid-template-columns: minmax(0, 1fr); }
+  .shot { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .liquid i { animation: none; }
+  .sweep.run { animation-duration: 0.01s; }
+  .msg.new { animation: none; }
+}
+</style>
+
+<div class="liquid" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+
+<div class="wrap">
+  <header class="top">
+    <div class="lede">
+      <div class="brand"><span class="drop" aria-hidden="true"></span><span class="wordmark">fixkit<small>for Flutter</small></span></div>
+      <h1>Long press the bug. <em>Your agent fixes the code.</em></h1>
+      <p>A long press in your running Flutter app becomes a fix request for the AI agent in your editor, with the widget's file and line, the widgets around it and a screenshot. The agent edits, hot reloads, and the app shows you when it's fixed.</p>
+    </div>
+  </header>
+
+  <section class="stage glass" id="stage" aria-label="Animated walkthrough of a fix">
+    <div class="phone-col">
+      <div class="phone">
+        <div class="screen" id="screen">
+          <div class="statusbar"><span>9:41</span><span class="sb-icons"><b></b><b></b><b></b><b></b><span class="sb-batt"></span></span></div>
+
+          <div class="app" id="app">
+            <div class="app-body">
+              <p class="hello">Good morning</p>
+              <h3 class="wallet-title">Your wallet</h3>
+              <div class="wcard">
+                <div class="wc-top"><span>TALLY</span><i>VISA</i></div>
+                <div class="wc-num">•••• •••• •••• 4417</div>
+                <div class="wc-bottom">
+                  <div><div class="wc-label">CARD HOLDER</div><div class="wc-val wc-holder">Alexandra Montgomery-Whitfield</div></div>
+                  <div style="text-align:right"><div class="wc-label">EXPIRES</div><div class="wc-val">09/29</div></div>
+                </div>
+              </div>
+              <div class="qa">
+                <div class="qa-btn shifted"><span class="ic">↑</span>Send</div>
+                <div class="qa-btn"><span class="ic">↓</span>Request</div>
+                <div class="qa-btn square"><span class="ic">+</span>Top up</div>
+                <div class="qa-btn"><span class="ic">⋯</span>More</div>
+              </div>
+              <h4 class="recent">Recent</h4>
+              <div class="tx"><span class="av">N</span><span class="who"><b>Northwind GmbH</b><span>Salary, September</span></span><span class="amt income" id="target">+€4,650.00</span></div>
+              <div class="tx"><span class="av">F</span><span class="who"><b>Fresh Market</b><span>Groceries</span></span><span class="amt spend">−€86.40</span></div>
+              <div class="tx"><span class="av">M</span><span class="who"><b>Metro Transit</b><span>Monthly pass</span></span><span class="amt spend">−€49.00</span></div>
+              <div class="tx"><span class="av">C</span><span class="who"><b>Café Lumen</b><span>Lunch with Sam</span></span><span class="amt spend">−€23.80</span></div>
+            </div>
+            <nav class="tabbar"><span class="on">Home</span><span>Activity</span></nav>
+          </div>
+
+          <div class="sweep" id="sweep"></div>
+          <div class="dim" id="dim"></div>
+          <div class="spot" id="spot"></div>
+          <div class="chip" id="chip">Text · transaction_row.dart:35</div>
+          <div class="keyboard" id="keyboard" aria-hidden="true"></div>
+          <div class="composer" id="composer">
+            <div class="scopes">
+              <span class="step-btn dglass" id="narrow" aria-label="Select the smaller widget">−</span>
+              <div class="crumbs" id="crumbs"></div>
+              <span class="step-btn dglass" id="widen" aria-label="Select the parent widget">+</span>
+            </div>
+            <div class="sugs" id="sugs"></div>
+            <div class="bar dglass">
+              <span class="orb"></span>
+              <span class="field" id="field"><span class="ph">What should change here?</span></span>
+              <span class="send" id="send">↑</span>
+            </div>
+          </div>
+          <div class="aura" aria-hidden="true"></div>
+          <div class="finger" id="finger"><svg viewBox="0 0 68 68"><circle cx="34" cy="34" r="32"></circle></svg></div>
+          <div class="island" id="island"><div class="card-in" id="cardIn"></div></div>
+          <div class="home-ind"></div>
+        </div>
+      </div>
+      <p class="phone-caption">Everything with a glow is drawn by <code>FixKit</code> over your app in debug builds. Release builds contain none of it.</p>
+    </div>
+
+    <div class="agent-col">
+      <div class="editors" role="group" aria-label="Choose the editor">
+        <span class="lbl">Works in</span>
+      </div>
+      <div class="agent glass">
+        <div class="agent-head">
+          <span class="title" id="agentTitle">Cursor · Agent</span>
+          <span class="mcp"><span class="dot-live"></span>fixkit MCP</span>
+        </div>
+        <div class="chat" id="chat" aria-live="polite"></div>
+        <div class="agent-input"><span id="agentPlaceholder">Message the Cursor agent</span><kbd>⏎</kbd></div>
+      </div>
+    </div>
+
+    <div class="below">
+      <div class="rail">
+        <div class="controls">
+          <button class="btn" id="play" type="button" aria-label="Pause"><svg viewBox="0 0 16 16" id="playIcon"><rect x="3" y="2" width="3.5" height="12" rx="1"></rect><rect x="9.5" y="2" width="3.5" height="12" rx="1"></rect></svg></button>
+          <button class="btn" id="restart" type="button" aria-label="Restart"><svg viewBox="0 0 16 16"><path d="M8 2.5a5.5 5.5 0 1 1-5.2 3.7l1.6.6A3.8 3.8 0 1 0 8 4.2V6L4.8 3.4 8 .8v1.7Z"></path></svg></button>
+        </div>
+        <ol class="steps" id="steps"></ol>
+      </div>
+      <div class="flow-wrap">
+        <div class="flow glass" id="flow">
+          <div class="node" data-n="app"><b>App</b><span>FixKit</span></div>
+          <div class="wire" data-w="app-hub"><em></em><i class="bead"></i></div>
+          <div class="node" data-n="hub"><b>Hub</b><span>127.0.0.1:4747</span></div>
+          <div class="wire" data-w="hub-mcp"><em></em><i class="bead"></i></div>
+          <div class="node" data-n="mcp"><b>MCP server</b><span>.fixkit/mcp.dart</span></div>
+          <div class="wire" data-w="mcp-agent"><em></em><i class="bead"></i></div>
+          <div class="node" data-n="agent"><b>Agent</b><span id="flowEditor">Cursor</span></div>
+        </div>
+      </div>
+      <p class="caption" aria-live="polite"><span class="k" id="captionKey">step 1</span><span id="caption"></span></p>
+    </div>
+  </section>
+
+  <div class="lower">
+    <section class="card glass" aria-labelledby="setup-h">
+      <span class="eyebrow">Setup</span>
+      <h2 id="setup-h">Two commands, then one sentence</h2>
+      <div class="term">
+        <div class="term-head">your Flutter project<button class="copy" id="copy" type="button">Copy commands</button></div>
+        <div class="term-body" id="termBody"><span class="p">$</span> flutter pub add fixkit
+<span class="p">$</span> dart run fixkit init
+
+  <span class="ok">✔</span> lib/main.dart    runApp(FixKit(child: ...))
+  <span class="ok">✔</span> Launcher         .fixkit/mcp.dart
+  <span class="ok">✔</span> Cursor           .cursor/mcp.json  <span class="dim">+ Dart MCP server</span>
+  <span class="ok">✔</span> VS Code          .vscode/mcp.json
+  <span class="ok">✔</span> Antigravity      ~/.gemini/config/mcp_config.json
+  <span class="ok">✔</span> Hot reload       on save
+  <span class="ok">✔</span> Agent rules      AGENTS.md
+  <span class="ok">✔</span> Hub              running on 127.0.0.1, port 4747</div>
+      </div>
+      <div class="say">Reload the editor once, run the app, then tell the agent: <q>watch for fixes</q></div>
+    </section>
+
+    <section class="card glass" aria-labelledby="facts-h">
+      <span class="eyebrow">What you get</span>
+      <h2 id="facts-h">No marks, no addresses, no config</h2>
+      <dl class="facts">
+        <div class="fact"><dt>Source lines</dt><dd>Debug builds record where every widget is constructed, so each report names the exact <code>file:line</code> without annotating anything.</dd></div>
+        <div class="fact"><dt>Devices</dt><dd class="devices">
+          <span class="dev"><span>iOS simulator, desktop</span><span>loopback</span></span>
+          <span class="dev"><span>Android emulator, USB phone</span><span>adb reverse, automatic</span></span>
+          <span class="dev"><span>iPhone over Wi-Fi</span><span>init --lan, with a token</span></span>
+        </dd></div>
+        <div class="fact"><dt>Hot reload</dt><dd>Reload on save, the Dart MCP server's <code>hot_reload</code>, or <code>dart run fixkit run</code>. The app confirms each reload itself.</dd></div>
+        <div class="fact"><dt>No agent watching</dt><dd>The request goes to your clipboard with a desktop notification, ready to paste into any chat.</dd></div>
+      </dl>
+    </section>
+  </div>
+
+  <footer>Prototype of the fixkit for Flutter in-app UI and flow. Based on <a href="https://github.com/ostiums/fixkit" target="_blank" rel="noopener">ostiums/fixkit</a>.</footer>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const EDITORS = {
+    'Cursor': { title: 'Cursor · Agent', ph: 'Message the Cursor agent' },
+    'VS Code': { title: 'VS Code · Copilot Chat (Agent mode)', ph: 'Ask Copilot in Agent mode' },
+    'Antigravity': { title: 'Antigravity · Agent', ph: 'Message the Antigravity agent' },
+    'Windsurf': { title: 'Windsurf · Cascade', ph: 'Ask Cascade' },
+    'Claude Code': { title: 'Claude Code', ph: 'claude >' },
+    'Gemini CLI': { title: 'Gemini CLI', ph: 'gemini >' },
+  };
+  let editor = 'Cursor';
+
+  // ---------- Keyboard ----------
+  const rows = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
+  const kb = $('keyboard');
+  const keys = {};
+  rows.forEach((row, r) => {
+    const el = document.createElement('div');
+    el.className = 'krow';
+    if (r === 2) el.insertAdjacentHTML('beforeend', '<span class="key wide">⇧</span>');
+    for (const ch of row) {
+      const k = document.createElement('span');
+      k.className = 'key';
+      k.textContent = ch;
+      keys[ch] = k;
+      el.appendChild(k);
+    }
+    if (r === 2) el.insertAdjacentHTML('beforeend', '<span class="key wide">⌫</span>');
+    kb.appendChild(el);
+  });
+  const last = document.createElement('div');
+  last.className = 'krow';
+  last.innerHTML = '<span class="key wide">123</span><span class="key space">space</span><span class="key go">send</span>';
+  kb.appendChild(last);
+  keys[' '] = last.querySelector('.space');
+  keys['\n'] = last.querySelector('.go');
+
+  function hitKey(ch) {
+    const k = keys[ch.toLowerCase()];
+    if (!k) return;
+    k.classList.add('hit');
+    setTimeout(() => k.classList.remove('hit'), 110);
+  }
+
+  // ---------- Selection bar ----------
+  // The pressed Text and the widgets of the app's own code around it.
+  const SCOPES = [
+    { label: 'Text', line: 35, el: () => target },
+    { label: 'Row', line: 17, el: () => target.closest('.tx') },
+    { label: 'TransactionRow', line: 30, el: () => target.closest('.tx'), file: 'home_page.dart' },
+    { label: 'Column', line: 16, el: () => document.querySelector('.app-body') , file: 'home_page.dart' },
+  ];
+  let scopeIndex = 0;
+  function renderCrumbs() {
+    $('crumbs').innerHTML = SCOPES.map((sc, k) => `${k ? '<i>›</i>' : ''}<span class="crumb${k === scopeIndex ? ' on' : ''}">${sc.label}</span>`).join('');
+    $('narrow').classList.toggle('off', scopeIndex === 0);
+    $('widen').classList.toggle('off', scopeIndex === SCOPES.length - 1);
+  }
+
+  // ---------- Geometry ----------
+  const screen = $('screen');
+  const app = $('app');
+  const target = $('target');
+  const SCREEN_W = 284, SCREEN_H = 620;
+
+  function rectInApp(el) {
+    let x = 0, y = 0, node = el;
+    while (node && node !== app) { x += node.offsetLeft; y += node.offsetTop; node = node.offsetParent; }
+    return { x, y, w: el.offsetWidth, h: el.offsetHeight };
+  }
+  function liftFor(r) {
+    const barTop = $('composer').offsetTop - 8;
+    const overlap = r.y + r.h + 18 - barTop;
+    if (overlap <= 0) return 0;
+    return Math.min(overlap, Math.max(0, r.y - 60));
+  }
+  function holePath(x, y, w, h, rad) {
+    const W = SCREEN_W, H = SCREEN_H;
+    return `M0 0H${W}V${H}H0Z M${x + rad} ${y}H${x + w - rad}A${rad} ${rad} 0 0 1 ${x + w} ${y + rad}V${y + h - rad}A${rad} ${rad} 0 0 1 ${x + w - rad} ${y + h}H${x + rad}A${rad} ${rad} 0 0 1 ${x} ${y + h - rad}V${y + rad}A${rad} ${rad} 0 0 1 ${x + rad} ${y}Z`;
+  }
+  function placeComposer() {
+    const sc = SCOPES[scopeIndex];
+    const r = rectInApp(sc.el());
+    const lift = liftFor(r);
+    const pad = 6;
+    const x = r.x - pad, y = r.y - lift - pad, w = r.w + pad * 2, h = r.h + pad * 2;
+    $('dim').style.clipPath = `path(evenodd, "${holePath(x, y, w, h, 10)}")`;
+    Object.assign($('spot').style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' });
+    const chip = $('chip');
+    chip.textContent = `${sc.label} · ${sc.file || 'transaction_row.dart'}:${sc.line}`;
+    const cw = chip.offsetWidth || 190;
+    chip.style.left = Math.max(10, Math.min(SCREEN_W - cw - 10, r.x + r.w / 2 - cw / 2)) + 'px';
+    chip.style.top = (y - 34) + 'px';
+    return lift;
+  }
+  const SUGGEST = {
+    text: ['Change the colour', 'Fix the overflow', 'Make it bold', 'Fix the alignment'],
+    layout: ['Fix the spacing', 'Align the items', 'Add padding', 'Make it scroll'],
+  };
+  function renderSuggestions() {
+    $('sugs').innerHTML = `<span class="sug dglass badge"><i></i>${editor} is watching</span>`
+      + SUGGEST[scopeIndex === 0 ? 'text' : 'layout'].map((t) => `<span class="sug dglass">${t}</span>`).join('');
+  }
+  function selectScope(k) {
+    scopeIndex = k;
+    renderCrumbs();
+    renderSuggestions();
+    const lift = placeComposer();
+    app.style.transform = `translateY(${-lift}px)`;
+  }
+  function tapStep(id) {
+    const el = $(id);
+    el.classList.add('tap');
+    setTimeout(() => el.classList.remove('tap'), 220);
+  }
+
+  function placeFinger() {
+    const r = rectInApp(target);
+    Object.assign($('finger').style, { left: (r.x + r.w / 2 - 4) + 'px', top: (r.y + r.h / 2 + 4) + 'px' });
+  }
+
+  // ---------- Agent card ----------
+  const island = $('island');
+  const cardIn = $('cardIn');
+  let cardKey = '';
+  let shownSteps = 0;
+  let typer = null;
+  let cardLate = false;
+
+  function card(state) {
+    const key = state ? JSON.stringify(state) : '';
+    if (key === cardKey) return;
+    const wasOpen = island.classList.contains('open');
+    cardKey = key;
+    clearInterval(typer);
+    if (!state) {
+      island.classList.remove('open', 'ok');
+      island.style.height = '';
+      shownSteps = 0;
+      return;
+    }
+    const steps = state.steps.map((st, k) =>
+      `<li class="${st.s}${k >= shownSteps ? ' new' : ''}"><i>${st.s === 'active' ? '' : '✓'}</i><span>${st.t}</span></li>`).join('');
+    shownSteps = state.steps.length;
+    cardIn.innerHTML = `
+      <div class="ch"><span class="orb ${state.ok ? 'ok' : 'busy'}"></span>
+        <div class="ct"><b>${state.title}</b><span>“${COMMENT}”</span></div><span class="cx">✕</span></div>
+      <ul class="csteps">${steps}</ul>
+      ${state.summary ? `<div class="csum"><span class="ghost">${state.summary}</span><span class="typed" id="typed"></span></div>` : ''}`;
+    island.classList.toggle('ok', Boolean(state.ok));
+    island.classList.add('open');
+    island.style.height = cardIn.offsetHeight + 'px';
+    if (wasOpen) {
+      island.classList.remove('morph');
+      void island.offsetWidth;
+      island.classList.add('morph');
+    }
+    if (state.summary) {
+      let n = 0;
+      const typed = $('typed');
+      typer = setInterval(() => {
+        n += 1;
+        typed.textContent = state.summary.slice(0, n);
+        if (n >= state.summary.length) clearInterval(typer);
+      }, 24);
+    }
+  }
+
+  // What the card shows at each step; `late` is the second half of a step.
+  function cardFor(i, late) {
+    const E = editor;
+    const sent = { t: `Sent to ${E}`, s: 'done' };
+    const reading = (s) => ({ t: 'Reading transaction_row.dart:35', s });
+    const progress = (s) => ({ t: 'Fixing the colour test', s });
+    const edited = (s) => ({ t: 'Edited transaction_row.dart', s });
+    switch (i) {
+      case 3: return late
+        ? { title: `${E} is fixing it`, steps: [sent, reading('active')] }
+        : { title: `Sending to ${E}`, steps: [{ t: 'Sending the report', s: 'active' }] };
+      case 4: return { title: `${E} is fixing it`, steps: [sent, reading('active')] };
+      case 5: return late
+        ? { title: `${E} is fixing it`, steps: [sent, reading('done'), progress('done'), edited('active')] }
+        : { title: `${E} is fixing it`, steps: [sent, reading('done'), progress('active')] };
+      case 6: return { title: 'Hot reloading the fix', steps: [sent, reading('done'), progress('done'), edited('done'), { t: 'Hot reloading', s: 'active' }] };
+      case 7: return {
+        title: 'Fixed', ok: true,
+        steps: [sent, reading('done'), progress('done'), edited('done'), { t: 'Hot reloaded', s: 'done' }, { t: 'Fix is on screen', s: 'final' }],
+        summary: 'Income amounts are green; spending is back to ink.',
+      };
+    }
+    return null;
+  }
+  function showCard(i, late) {
+    cardLate = late;
+    card(cardFor(i, late));
+  }
+
+  function setAura(mode) {
+    screen.classList.toggle('aura-strong', mode === 'strong');
+    screen.classList.toggle('aura-soft', mode === 'soft');
+  }
+
+  function setPresence() {
+    renderSuggestions();
+  }
+
+  // ---------- Chat ----------
+  const PROMPT = () => `<span class="comment">Income should be green</span>
+
+<span class="hl">[fix r1]</span> Text "+€4,650.00" · lib/features/activity/transaction_row.dart:35 · Home screen
+Widget path, innermost first:
+  - Text "+€4,650.00" → lib/features/activity/transaction_row.dart:35
+  - Row → lib/features/activity/transaction_row.dart:17
+  - Padding → lib/features/activity/transaction_row.dart:15
+  - TransactionRow → lib/features/home/home_page.dart:30
+Nearby text: "Northwind GmbH", "Salary, September"
+Screen: Home · Platform: iOS
+Screenshot: .fixkit/reports/r1.png`;
+
+  const tool = (fn, state, ok, body = '') => `
+    <div class="tool"><div class="tool-head"><span class="ico">fk</span><span class="fn">${fn}</span><span class="srv">fixkit</span>
+    <span class="state${ok ? ' ok' : ''}">${ok ? '' : '<span class="spin"></span>'}${state}</span></div>${body}</div>`;
+
+  const CHAT = [
+    { at: 0, cls: 'msg user', html: () => 'watch for fixes' },
+    { at: 0, until: 3, cls: 'msg tool-wrap', html: () => tool('wait_for_fix_report', 'watching for reports', false) },
+    { at: 4, cls: 'msg tool-wrap', html: () => tool('wait_for_fix_report', 'returned r1', true,
+        `<div class="tool-body row"><pre class="prompt">${PROMPT()}</pre><div class="shot" aria-label="Screenshot with the amount outlined"><i class="card"></i><i class="r1"></i><i class="r2"></i><i class="r3"></i><i class="r4"></i><b></b><span>r1.png</span></div></div>`) },
+    { at: 5, cls: 'msg bot', html: () => '<p>The colour test in <code>TransactionRow</code> is inverted, so spending gets the income green. One-line fix at <code>transaction_row.dart:40</code>.</p>' },
+    { at: 5, cls: 'msg tool-wrap', html: () => tool('fix_progress', 'shown in the app', true) },
+    { at: 5, cls: 'msg tool-wrap', html: () => `<div class="tool"><div class="tool-head"><span class="ico">✎</span><span class="fn">Edit</span><span class="state ok">1 line changed</span></div><div class="tool-body"><div class="diff">
+        <div class="file">lib/features/activity/transaction_row.dart</div>
+        <div class="ln"><span>38</span><span></span><span>fontWeight: FontWeight.w700,</span></div>
+        <div class="ln"><span>39</span><span></span><span>fontSize: 15,</span></div>
+        <div class="ln del"><span>40</span><span>−</span><span>color: transaction.amount &lt; 0 ? _income : _ink,</span></div>
+        <div class="ln add new"><span>40</span><span>+</span><span>color: transaction.isIncome ? _income : _ink,</span></div>
+      </div></div></div>` },
+    { at: 6, until: 6, cls: 'msg tool-wrap', html: () => tool('hot_reload', 'reloading', false) },
+    { at: 7, cls: 'msg tool-wrap', html: () => tool('hot_reload', 'app confirmed the reload', true) },
+    { at: 7, cls: 'msg tool-wrap', html: () => tool('complete_fix', 'r1 is live', true) },
+    { at: 7, cls: 'msg bot', html: () => '<p>Fixed: income amounts are green and spending is back to ink. Watching for the next report.</p>' },
+    { at: 7, cls: 'msg tool-wrap', html: () => tool('wait_for_fix_report', 'watching for reports', false) },
+  ];
+
+  function renderChat(step) {
+    const chat = $('chat');
+    chat.innerHTML = CHAT
+      .filter((m) => m.at <= step && (m.until === undefined || step <= m.until))
+      .map((m) => `<div class="${m.cls}${m.at === step ? ' new' : ''}">${m.html()}</div>`)
+      .join('');
+    requestAnimationFrame(() => { chat.scrollTop = chat.scrollHeight; });
+  }
+
+  // ---------- Flow ----------
+  function flow(nodes, wires, labels) {
+    document.querySelectorAll('.node').forEach((n) => n.classList.toggle('on', nodes.includes(n.dataset.n)));
+    document.querySelectorAll('.wire').forEach((w) => {
+      const spec = wires[w.dataset.w];
+      w.classList.remove('on', 'rev', 'wait');
+      if (spec) spec.split(' ').forEach((c) => w.classList.add(c));
+      w.querySelector('em').textContent = (labels && labels[w.dataset.w]) || '';
+    });
+  }
+
+  // ---------- Steps ----------
+  let typed = '';
+  function setDraft(text) {
+    typed = text;
+    $('field').innerHTML = text ? `${text.replace(/</g, '&lt;')}<span class="caret"></span>` : '<span class="ph">What should change here?</span>';
+    $('send').classList.toggle('ready', text.length > 0);
+  }
+
+  const COMMENT = 'Income should be green';
+  const typingEvents = [];
+  for (let i = 1; i <= COMMENT.length; i++) {
+    typingEvents.push({ at: 1250 + i * 62, run: () => { hitKey(COMMENT[i - 1]); setDraft(COMMENT.slice(0, i)); } });
+  }
+
+  const STEPS = [
+    {
+      label: 'Run the app', dur: 2600,
+      caption: 'The app runs as usual. In the editor, the agent was told “watch for fixes” and is waiting on the hub.',
+      enter() { setAura('off'); flow(['agent'], { 'hub-mcp': 'wait', 'mcp-agent': 'wait' }, { 'hub-mcp': 'long poll' }); },
+    },
+    {
+      label: 'Long press', dur: 2100,
+      caption: 'A half-second press belongs to fixkit, so the row under the finger does not react. FixKit hit-tests the widget and reads where it was constructed.',
+      enter() {
+        placeFinger();
+        setAura('off');
+        flow(['app'], { 'hub-mcp': 'wait', 'mcp-agent': 'wait' }, { 'hub-mcp': 'long poll' });
+      },
+      events: [
+        { at: 60, run: () => $('finger').classList.add('on') },
+        { at: 380, run: () => $('finger').classList.add('press') },
+        { at: 1010, run: () => { $('finger').classList.add('burst'); setAura('strong'); } },
+      ],
+    },
+    {
+      label: 'Ask the agent', dur: 3400,
+      caption: 'The screen edge lights up: you are talking to your agent. + and − widen the selection from the Text to its Row, Column or card. One row shows who is watching and suggestions that fit; everything stays above the keyboard.',
+      enter() {
+        scopeIndex = 0;
+        renderCrumbs();
+        renderSuggestions();
+        const lift = placeComposer();
+        app.style.transform = `translateY(${-lift}px)`;
+        screen.classList.add('composing');
+        setAura('strong');
+        flow(['app'], { 'hub-mcp': 'wait', 'mcp-agent': 'wait' }, { 'hub-mcp': 'long poll' });
+      },
+      events: [
+        // + widens the selection to the Row, then − brings it back to the Text.
+        { at: 300, run: () => { tapStep('widen'); selectScope(1); } },
+        { at: 1150, run: () => { tapStep('narrow'); selectScope(0); } },
+        ...typingEvents,
+        { at: 1250 + COMMENT.length * 62 + 300, run: () => { hitKey('\n'); $('send').classList.add('press'); } },
+        { at: 1250 + COMMENT.length * 62 + 470, run: () => $('send').classList.remove('press') },
+      ],
+    },
+    {
+      label: 'Send', dur: 2200,
+      caption: 'The report leaves the app: your words, the widget path with source lines, nearby text, and a screenshot with the widget outlined.',
+      enter() {
+        setAura('soft');
+        showCard(3, false);
+        flow(['hub'], { 'app-hub': 'on', 'hub-mcp': 'on' }, { 'app-hub': 'POST /report', 'hub-mcp': 'routed by project' });
+      },
+      events: [{ at: 1000, run: () => showCard(3, true) }],
+    },
+    {
+      label: 'Agent reads it', dur: 3300,
+      caption: 'The agent’s wait_for_fix_report call returns the report, screenshot attached. The app shows each step as it happens.',
+      enter() {
+        setAura('soft');
+        showCard(4, false);
+        flow(['agent'], { 'hub-mcp': 'on', 'mcp-agent': 'on' }, { 'hub-mcp': 'report r1', 'mcp-agent': 'tool result' });
+      },
+    },
+    {
+      label: 'Smallest fix', dur: 3200,
+      caption: 'The agent starts at the first file:line and makes the smallest change. The hub notices the edit to the widget’s file by itself.',
+      enter() {
+        setAura('soft');
+        showCard(5, false);
+        flow(['agent'], { 'mcp-agent': 'on rev' }, { 'mcp-agent': 'fix_progress' });
+      },
+      events: [{ at: 1400, run: () => { showCard(5, true); flow(['hub'], { 'hub-mcp': 'on rev', 'mcp-agent': 'on rev' }, { 'hub-mcp': 'file changed' }); } }],
+    },
+    {
+      label: 'Hot reload', dur: 2300,
+      caption: 'Hot reload puts the change on screen. The app’s reassemble() tells the hub the fix arrived, whatever triggered the reload.',
+      enter() {
+        setAura('soft');
+        showCard(6, false);
+        flow(['app'], { 'app-hub': 'on' }, { 'app-hub': 'reassemble() → /signal' });
+      },
+      events: [
+        { at: 120, run: () => { const s = $('sweep'); s.classList.remove('run'); void s.offsetWidth; s.classList.add('run'); } },
+        { at: 560, run: () => app.classList.add('fixed') },
+      ],
+    },
+    {
+      label: 'Fixed', dur: 4200,
+      caption: 'complete_fix sends the agent’s summary to the app, typed out under the steps, and the agent goes back to watching.',
+      enter() {
+        app.classList.add('fixed');
+        setAura('off');
+        showCard(7, false);
+        flow(['app', 'agent'], { 'app-hub': 'on rev', 'hub-mcp': 'on rev', 'mcp-agent': 'on rev' }, { 'app-hub': 'status: live', 'mcp-agent': 'complete_fix' });
+      },
+    },
+  ];
+
+  // Resets the stage to the start of a step, so any step can be jumped to.
+  function render(i) {
+    const s = STEPS[i];
+    screen.classList.remove('composing');
+    app.style.transform = '';
+    $('finger').className = 'finger';
+    $('send').classList.remove('press');
+    setDraft('');
+    if (i < 6) app.classList.remove('fixed');
+    if (i < 3) card(null);
+    renderChat(i);
+    s.enter();
+    $('caption').textContent = s.caption;
+    $('captionKey').textContent = `${i + 1} / ${STEPS.length}`;
+    stepEls.forEach((el, k) => {
+      el.classList.toggle('on', k === i);
+      el.classList.toggle('done', k < i);
+      el.querySelector('.fill').style.width = k < i ? '100%' : '0%';
+    });
+  }
+
+  // ---------- Rail ----------
+  const stepsEl = $('steps');
+  const stepEls = STEPS.map((s, i) => {
+    const li = document.createElement('li');
+    li.style.display = 'contents';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'step';
+    b.innerHTML = `<i class="fill"></i><span class="n">${i + 1}</span><span>${s.label}</span>`;
+    b.addEventListener('click', () => go(i));
+    li.appendChild(b);
+    stepsEl.appendChild(li);
+    return b;
+  });
+
+  // ---------- Engine ----------
+  let step = 0, t = 0, playing = !reduced, prev = null, fired = new Set();
+  function go(i) {
+    step = i;
+    t = 0;
+    fired = new Set();
+    render(i);
+  }
+  function setPlaying(p) {
+    playing = p;
+    $('stage').classList.toggle('paused', !p);
+    $('play').setAttribute('aria-label', p ? 'Pause' : 'Play');
+    $('playIcon').innerHTML = p
+      ? '<rect x="3" y="2" width="3.5" height="12" rx="1"></rect><rect x="9.5" y="2" width="3.5" height="12" rx="1"></rect>'
+      : '<path d="M4 2.2v11.6c0 .6.7 1 1.2.6l8.4-5.8a.7.7 0 0 0 0-1.2L5.2 1.6c-.5-.4-1.2 0-1.2.6Z"></path>';
+  }
+  function tick(now) {
+    if (prev === null) prev = now;
+    const dt = Math.min(100, now - prev);
+    prev = now;
+    if (playing) {
+      const s = STEPS[step];
+      t += dt;
+      (s.events || []).forEach((e, k) => {
+        if (!fired.has(k) && t >= e.at) { fired.add(k); e.run(); }
+      });
+      stepEls[step].querySelector('.fill').style.width = Math.min(100, (t / s.dur) * 100) + '%';
+      if (t >= s.dur) go((step + 1) % STEPS.length);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  $('play').addEventListener('click', () => setPlaying(!playing));
+  $('restart').addEventListener('click', () => { go(0); setPlaying(true); });
+  document.addEventListener('visibilitychange', () => { prev = null; });
+
+  // ---------- Editors ----------
+  const edWrap = document.querySelector('.editors');
+  Object.keys(EDITORS).forEach((name) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ed';
+    b.textContent = name;
+    b.setAttribute('aria-pressed', String(name === editor));
+    b.addEventListener('click', () => {
+      editor = name;
+      edWrap.querySelectorAll('.ed').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+      $('agentTitle').textContent = EDITORS[name].title;
+      $('agentPlaceholder').textContent = EDITORS[name].ph;
+      $('flowEditor').textContent = name;
+      setPresence();
+      if (step >= 3) card(cardFor(step, cardLate));
+    });
+    edWrap.appendChild(b);
+  });
+
+  // ---------- Copy ----------
+  $('copy').addEventListener('click', async () => {
+    const text = 'flutter pub add fixkit\ndart run fixkit init';
+    const btn = $('copy');
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = 'Copied';
+    } catch (_) {
+      const range = document.createRange();
+      range.selectNodeContents($('termBody'));
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      btn.textContent = 'Selected: press Copy';
+    }
+    setTimeout(() => { btn.textContent = 'Copy commands'; }, 1800);
+  });
+
+  // Start once fonts have settled, so measured positions are right.
+  const start = () => { setPresence(); renderCrumbs(); renderSuggestions(); go(0); setPlaying(playing); requestAnimationFrame(tick); };
+  (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(start);
+})();
+</script>

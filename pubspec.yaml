@@ -1,0 +1,34 @@
+name: fixkit
+description: >-
+  Long press any widget in your running Flutter app, type what is wrong, and the
+  AI agent in your editor (Cursor, VS Code, Antigravity, Windsurf, Claude Code,
+  Gemini CLI) fixes the code and hot reloads it. Debug builds only.
+version: 0.1.0
+homepage: https://github.com/Huzaifa-367/Fixkit-Pckg
+repository: https://github.com/Huzaifa-367/Fixkit-Pckg
+issue_tracker: https://github.com/Huzaifa-367/Fixkit-Pckg/issues
+topics:
+  - debugging
+  - ai
+  - mcp
+  - developer-tools
+  - hot-reload
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+# No third-party dependencies: the in-app library uses only Flutter, and the
+# hub, MCP server and CLI use only dart:io.
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ">=4.0.0 <7.0.0"
+
+executables:
+  fixkit: fixkit
+

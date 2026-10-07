@@ -1,0 +1,58 @@
+name: Release
+
+# Runs when a version tag is pushed (vX.Y.Z, made by tool/release.dart).
+# Publishing to pub.dev uses automated publishing: enable it once on
+# pub.dev → fixkit → Admin → Automated publishing, for this repository with
+# the tag pattern v{{version}}. No secrets are needed. Set the repository
+# variable PUBLISH_TO_PUB_DEV to "false" to only make the GitHub release.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: The tag matches the version everywhere
+        run: dart run tool/release.dart --check --tag "$GITHUB_REF_NAME"
+      - run: flutter analyze
+      - run: flutter test
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # the GitHub release
+      id-token: write # pub.dev automated publishing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Release notes from the changelog
+        run: dart run tool/release.dart --notes "$GITHUB_REF_NAME" > release-notes.md
+      # Right before publishing, so the short-lived pub.dev token is fresh.
+      - uses: dart-lang/setup-dart@v1
+      - name: Publish to pub.dev
+        if: ${{ vars.PUBLISH_TO_PUB_DEV != 'false' }}
+        run: dart pub publish --force
+      - name: GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: fixkit ${{ github.ref_name }}
+          body_path: release-notes.md
+          prerelease: ${{ contains(github.ref_name, '-') }}
