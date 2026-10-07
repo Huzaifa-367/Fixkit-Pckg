@@ -108,6 +108,11 @@ class FixHub {
   Timer? _housekeeping;
   Timer? _adbTimer;
   Timer? _editTimer;
+  bool _closing = false;
+
+  /// Watches the project's `lib` while an agent works on a report, so an
+  /// edit to any file shows on the app's card at once.
+  final Map<String, _ProjectWatch> _projectWatches = {};
   bool _adbBusy = false;
   String? _lanAddress;
 
@@ -134,9 +139,17 @@ class FixHub {
     }
     _housekeeping = Timer.periodic(const Duration(seconds: 5), (_) => _tidy());
     _adbTimer = Timer.periodic(adbInterval, (_) => _reverseAndroid());
-    _editTimer = Timer.periodic(const Duration(milliseconds: 700), (_) {
+    _editTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
       for (final report in reports.values) {
-        if (report.status == FixStatus.fixing || report.status == FixStatus.reloading) _checkEdits(report);
+        if (report.status == FixStatus.fixing || report.status == FixStatus.reloading) {
+          _checkEdits(report);
+        } else if (_projectWatches.containsKey(report.id)) {
+          unawaited(_projectWatches.remove(report.id)!.cancel());
+        }
+      }
+      // Reports trimmed away stop being watched too.
+      for (final id in [..._projectWatches.keys]) {
+        if (!reports.containsKey(id)) unawaited(_projectWatches.remove(id)!.cancel());
       }
     });
     unawaited(_reverseAndroid());
@@ -144,6 +157,7 @@ class FixHub {
   }
 
   Future<void> close() async {
+    _closing = true;
     _housekeeping?.cancel();
     _adbTimer?.cancel();
     _editTimer?.cancel();
@@ -153,6 +167,14 @@ class FixHub {
     for (final runner in runners.values) {
       if (runner.waiter != null && !runner.waiter!.isCompleted) runner.waiter!.complete(null);
     }
+    final watches = [..._projectWatches.values];
+    _projectWatches.clear();
+    await Future.wait([for (final watch in watches) watch.cancel()]);
+    // Held status requests are answered before the sockets go.
+    for (final report in reports.values) {
+      report.releaseWaiters();
+    }
+    await Future<void>.delayed(Duration.zero);
     for (final server in _servers) {
       await server.close(force: true);
     }
@@ -186,7 +208,7 @@ class FixHub {
         'pid': pid,
         'lan': settings.lan,
         // What this hub can do; an app finding less knows the hub is old.
-        'features': const ['activity', 'presence', 'progress', 'selection'],
+        'features': const ['activity', 'presence', 'progress', 'selection', 'live-status'],
       });
     }
 
@@ -298,9 +320,18 @@ class FixHub {
     _reply(request, HttpStatus.ok, report.statusJson());
   }
 
-  void _status(HttpRequest request) {
-    final report = reports[request.uri.queryParameters['id']];
+  /// A report's status. With `since` (the revision the app last saw) and
+  /// `wait` (seconds), the answer waits until the report changes, so the app
+  /// shows each step as it happens without polling.
+  Future<void> _status(HttpRequest request) async {
+    final query = request.uri.queryParameters;
+    final report = reports[query['id']];
     if (report == null) return _reply(request, HttpStatus.notFound, {'error': 'no such report'});
+    final since = int.tryParse(query['since'] ?? '');
+    final wait = (int.tryParse(query['wait'] ?? '') ?? 0).clamp(0, 25);
+    if (since != null && wait > 0 && !report.isFinished && !_closing) {
+      await report.changeAfter(since, Duration(seconds: wait));
+    }
     final announce = report.status == FixStatus.live && !report.announced;
     if (announce) report.announced = true;
     _reply(request, HttpStatus.ok, report.statusJson(announce: announce));
@@ -780,22 +811,48 @@ class FixHub {
     return last;
   }
 
-  /// Remembers when the files of the widget path last changed.
+  /// Remembers when the files of the widget path last changed, and watches
+  /// the project's `lib` for edits to any other file.
   void _watchFiles(FixReport report) {
     for (final frame in report.chain.take(8)) {
       report.watched.putIfAbsent(frame.path, () => _modified(frame.path));
+    }
+    final root = report.projectRoot;
+    if (root == null || _projectWatches.containsKey(report.id)) return;
+    final lib = Directory(joinPath(root, 'lib'));
+    try {
+      if (!lib.existsSync()) return;
+      _projectWatches[report.id] = _ProjectWatch(lib, (file) {
+        if (report.status == FixStatus.fixing || report.status == FixStatus.reloading) _noteEdit(report, file);
+      });
+    } catch (_) {
+      // No file watching here (some network drives): the poll still sees
+      // the widget's own files.
+    }
+  }
+
+  void _noteEdit(FixReport report, String file) {
+    final path = _canonical(file);
+    if (!report.edited.add(path)) return;
+    report.note('Edited ${path.split('/').last}');
+  }
+
+  /// One spelling per file, whichever way it was reached (macOS reports
+  /// `/private/var/...` for `/var/...`).
+  String _canonical(String file) {
+    try {
+      return normalizePath(File(file).resolveSymbolicLinksSync());
+    } catch (_) {
+      return normalizePath(file);
     }
   }
 
   /// Notes each watched file the agent has changed since it took the report.
   void _checkEdits(FixReport report) {
     for (final entry in report.watched.entries) {
-      if (report.edited.contains(entry.key)) continue;
+      if (report.edited.contains(_canonical(entry.key))) continue;
       final now = _modified(entry.key);
-      if (now != null && now != entry.value) {
-        report.edited.add(entry.key);
-        report.note('Edited ${entry.key.replaceAll('\\', '/').split('/').last}');
-      }
+      if (now != null && now != entry.value) _noteEdit(report, entry.key);
     }
   }
 
@@ -939,4 +996,82 @@ Future<void> runHub({int port = fixkitPort, bool foreground = false}) async {
   await hub.done;
   await sink.flush();
   await sink.close();
+}
+
+/// Watches a project's `lib` folder for changed Dart files. macOS and Windows
+/// watch the tree in one go; Linux (inotify) watches each folder, and adds
+/// folders as they appear.
+class _ProjectWatch {
+  _ProjectWatch(Directory lib, this._onEdit) {
+    if (Platform.isLinux) {
+      _watch(lib, recursive: false);
+      try {
+        for (final entity in lib.listSync(recursive: true, followLinks: false)) {
+          if (entity is Directory) _watch(entity, recursive: false);
+        }
+      } catch (_) {
+        // A folder that cannot be listed: the ones found so far are watched.
+      }
+    } else {
+      _watch(lib, recursive: true);
+    }
+  }
+
+  /// Plenty for an app's `lib`; keeps inotify use bounded on huge trees.
+  static const int _maxFolders = 400;
+
+  final void Function(String file) _onEdit;
+  final Map<String, StreamSubscription<FileSystemEvent>> _subscriptions = {};
+  bool _cancelled = false;
+
+  void _watch(Directory dir, {required bool recursive}) {
+    if (_cancelled || _subscriptions.length >= _maxFolders || _subscriptions.containsKey(dir.path)) return;
+    try {
+      _subscriptions[dir.path] = dir.watch(recursive: recursive).listen(
+        _event,
+        onError: (Object _) => _subscriptions.remove(dir.path)?.cancel(),
+        cancelOnError: true,
+      );
+    } catch (_) {
+      // This folder cannot be watched; the others still are.
+    }
+  }
+
+  void _event(FileSystemEvent event) {
+    if (event.isDirectory) {
+      final created = event is FileSystemCreateEvent
+          ? event.path
+          : event is FileSystemMoveEvent
+              ? event.destination
+              : null;
+      if (Platform.isLinux && created != null) {
+        final dir = Directory(created);
+        _watch(dir, recursive: false);
+        // Files written before the new folder's watch began.
+        try {
+          for (final entity in dir.listSync(recursive: true, followLinks: false)) {
+            if (entity is Directory) {
+              _watch(entity, recursive: false);
+            } else if (entity.path.endsWith('.dart')) {
+              _onEdit(entity.path);
+            }
+          }
+        } catch (_) {}
+      }
+      return;
+    }
+    if (event is FileSystemDeleteEvent) return;
+    if (event is FileSystemModifyEvent && !event.contentChanged) return;
+    // Editors that save atomically write a temporary file and move it over
+    // the real one: the destination is the file that changed.
+    final file = event is FileSystemMoveEvent ? (event.destination ?? event.path) : event.path;
+    if (file.endsWith('.dart')) _onEdit(file);
+  }
+
+  Future<void> cancel() async {
+    _cancelled = true;
+    final subscriptions = [..._subscriptions.values];
+    _subscriptions.clear();
+    await Future.wait([for (final subscription in subscriptions) subscription.cancel()]);
+  }
 }

@@ -32,7 +32,7 @@ class FakeConnection implements FixConnection {
   }
 
   @override
-  Future<Map<String, Object?>> status(String id) async => later ?? {'id': id, 'status': FixStatus.live};
+  Future<Map<String, Object?>> status(String id, {int? since}) async => later ?? {'id': id, 'status': FixStatus.live};
 
   @override
   Future<Map<String, Object?>?> signal(String kind) async {

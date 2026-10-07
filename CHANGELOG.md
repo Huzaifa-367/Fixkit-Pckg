@@ -4,6 +4,27 @@ All notable changes to fixkit. The format follows [Keep a Changelog](https://kee
 
 ## Unreleased
 
+## 0.1.1
+
+### Added
+- **Hold ring.** A ring under the finger fills while a press is held and bursts when the composer opens. It stays hidden for the first moment, so taps never flash it, and the burst is skipped when the system asks for reduced motion.
+- **Live agent card.** The app keeps one status request open, and the hub answers it the moment the report changes (a step, a note, an edit, a new status). Steps show as they happen instead of up to a second late. Hubs from 0.1.5 and earlier are still polled.
+- **Edits anywhere in `lib`.** The hub watches the project's `lib` folder (and new folders in it) while an agent works, so *Edited theme.dart* shows for any file, not just the pressed widget's own. Atomic saves are seen too.
+- **Elapsed time.** The card shows how long the agent has been working.
+
+### Changed
+- **Performance.**
+  - The controller is a set of `ValueNotifier`s, so each change rebuilds only the widget that shows it. The app under fixkit never rebuilds.
+  - The glass has no backdrop blur and the spotlight has no blur mask. Painters repaint from their animations, in their own layers.
+  - The lift follows the keyboard frame by frame instead of restarting a tween each frame.
+  - The ring's pulse stops when the system asks for reduced motion.
+- **No edge glow.** The glow around the screen while the agent works is gone. The orb and the card show the same state.
+- **`FixConnection.status`** takes an optional `since` revision. Only a custom `FixConnection` (a test fake, say) needs the new parameter.
+
+### Fixed
+- The screenshot outline was offset when the app had slid up for the keyboard before the capture.
+- The app stayed slid up when the keyboard closed while the composer was open.
+
 ## 0.1.0
 
 First public release.

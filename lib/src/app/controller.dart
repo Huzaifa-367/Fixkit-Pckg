@@ -160,9 +160,16 @@ class FixNotice {
   final FixTone tone;
 }
 
+/// Who would take a report, and the agent's name.
+typedef FixPresenceInfo = ({FixPresence state, String? agent});
+
 /// The state behind the composer and the agent card: the press being
 /// described, the report being followed, and who is watching.
-class FixKitController extends ChangeNotifier {
+///
+/// Each piece of state is its own [ValueNotifier], so a change rebuilds only
+/// the widgets that show it: a presence poll touches the badge, a status poll
+/// the card, and nothing ever rebuilds the app.
+class FixKitController {
   FixKitController(this.connection);
 
   final FixConnection connection;
@@ -170,17 +177,55 @@ class FixKitController extends ChangeNotifier {
   /// The comment being typed.
   final TextEditingController draft = TextEditingController();
 
-  FixTarget? _target;
-  FixTarget? get target => _target;
+  final ValueNotifier<FixTarget?> _targetNotifier = ValueNotifier(null);
+  final ValueNotifier<FixRun?> _runNotifier = ValueNotifier(null);
+  final ValueNotifier<FixNotice?> _noticeNotifier = ValueNotifier(null);
+  final ValueNotifier<bool> _expandedNotifier = ValueNotifier(true);
+  final ValueNotifier<bool> _workingNotifier = ValueNotifier(false);
+  final ValueNotifier<FixPresenceInfo> _presenceNotifier =
+      ValueNotifier((state: FixPresence.checking, agent: null));
 
-  FixRun? _run;
-  FixRun? get run => _run;
+  /// The press being described; null when the composer is closed.
+  ValueListenable<FixTarget?> get targetListenable => _targetNotifier;
 
-  FixNotice? _notice;
-  FixNotice? get notice => _notice;
+  /// The report the agent card follows.
+  ValueListenable<FixRun?> get runListenable => _runNotifier;
 
-  String? _agent;
-  FixPresence _presence = FixPresence.checking;
+  /// A message with no report behind it.
+  ValueListenable<FixNotice?> get noticeListenable => _noticeNotifier;
+
+  /// Whether the agent card shows its steps.
+  ValueListenable<bool> get expandedListenable => _expandedNotifier;
+
+  /// Whether an agent is working on a report.
+  ValueListenable<bool> get workingListenable => _workingNotifier;
+
+  /// Who would take a report now (the composer's badge).
+  ValueListenable<FixPresenceInfo> get presenceListenable => _presenceNotifier;
+
+  FixTarget? get target => _targetNotifier.value;
+  FixTarget? get _target => _targetNotifier.value;
+  set _target(FixTarget? value) {
+    if (!_disposed) _targetNotifier.value = value;
+  }
+
+  FixRun? get run => _runNotifier.value;
+  FixRun? get _run => _runNotifier.value;
+  set _run(FixRun? value) {
+    if (_disposed) return;
+    // Working first: listeners of the run then see both values current.
+    _workingNotifier.value = value != null && !value.finished;
+    _runNotifier.value = value;
+  }
+
+  FixNotice? get notice => _noticeNotifier.value;
+  FixNotice? get _notice => _noticeNotifier.value;
+  set _notice(FixNotice? value) {
+    if (!_disposed) _noticeNotifier.value = value;
+  }
+
+  String? get _agent => _presenceNotifier.value.agent;
+  FixPresence get _presence => _presenceNotifier.value.state;
   String? _hubVersion;
   Timer? _presenceTimer;
   bool _restartAsked = false;
@@ -197,7 +242,10 @@ class FixKitController extends ChangeNotifier {
   /// The outdated hub's version, when [presence] is [FixPresence.outdated].
   String? get hubVersion => _hubVersion;
 
-  bool _expanded = true;
+  bool get _expanded => _expandedNotifier.value;
+  set _expanded(bool value) {
+    if (!_disposed) _expandedNotifier.value = value;
+  }
 
   /// Whether the agent card shows its steps.
   bool get expanded => _expanded;
@@ -208,11 +256,8 @@ class FixKitController extends ChangeNotifier {
   /// A press is being described or sent: a new long press is ignored.
   bool get busy => _target != null || _sending;
 
-  /// An agent is working on a report: the screen edge glows.
-  bool get working {
-    final run = _run;
-    return run != null && !run.finished;
-  }
+  /// Whether an agent is working on a report.
+  bool get working => _workingNotifier.value;
 
   Timer? _hideTimer;
   int _following = 0;
@@ -222,7 +267,6 @@ class FixKitController extends ChangeNotifier {
   void begin(FixTarget target) {
     draft.clear();
     _target = target;
-    _notify();
     // Kept current while the composer is open: an agent may start watching,
     // or finish another fix, while the comment is typed.
     unawaited(refreshPresence());
@@ -234,7 +278,6 @@ class FixKitController extends ChangeNotifier {
     _presenceTimer?.cancel();
     _target?.discard();
     _target = null;
-    _notify();
   }
 
   /// Selects another widget around the press: 0 is the pressed widget, each
@@ -243,7 +286,6 @@ class FixKitController extends ChangeNotifier {
     final target = _target;
     if (target == null || index == target.inspection.selected) return;
     _target = target.withInspection(target.inspection.select(index));
-    _notify();
   }
 
   /// Widens the selection to the parent.
@@ -267,7 +309,6 @@ class FixKitController extends ChangeNotifier {
     _expanded = !_expanded;
     // A card the person opens again stays until they close it.
     if (_expanded) _hideTimer?.cancel();
-    _notify();
   }
 
   /// Dismisses the card and stops following its report. The agent keeps
@@ -278,7 +319,6 @@ class FixKitController extends ChangeNotifier {
     _following++;
     _run = null;
     _notice = null;
-    _notify();
   }
 
   bool _foreground = true;
@@ -319,9 +359,7 @@ class FixKitController extends ChangeNotifier {
                   : FixPresence.idle;
     }
     if (next == _presence && agent == _agent) return;
-    _presence = next;
-    _agent = agent;
-    _notify();
+    _presenceNotifier.value = (state: next, agent: agent);
   }
 
   /// A hub left over from an older fixkit is asked, once, to stop. The
@@ -348,7 +386,6 @@ class FixKitController extends ChangeNotifier {
     _expanded = true;
     _hideTimer?.cancel();
     _run = FixRun(status: FixRun.sending, comment: comment, agent: _agent);
-    _notify();
 
     final inspection = target.inspection;
     final capture = await target.capture.catchError((Object _) => null);
@@ -375,7 +412,7 @@ class FixKitController extends ChangeNotifier {
       final id = answer['id'];
       if (id is! String) throw const FixHubUnreachable('the hub gave no id');
       _apply(answer, comment: comment);
-      if (!FixStatus.isFinished('${answer['status']}')) unawaited(_follow(id));
+      if (!FixStatus.isFinished('${answer['status']}')) unawaited(_follow(id, since: answer['revision']));
     } on FixVersionMismatch catch (error) {
       _sending = false;
       _run = null;
@@ -428,20 +465,36 @@ class FixKitController extends ChangeNotifier {
     final status = '${answer['status']}';
     if (status == FixStatus.live && answer['announce'] != true) return;
     _apply(answer);
-    if (!FixStatus.isFinished(status)) unawaited(_follow(id));
+    if (!FixStatus.isFinished(status)) unawaited(_follow(id, since: answer['revision']));
   }
 
-  Future<void> _follow(String id) async {
+  /// Follows a report until it finishes. The hub holds each status request
+  /// until the report changes (a step, an edit, a new status), so the card
+  /// shows what the agent does the moment the hub hears of it. Hubs from
+  /// before 0.1.6 answer at once; those are polled every 800 ms.
+  Future<void> _follow(String id, {Object? since}) async {
     final token = ++_following;
     var misses = 0;
+    // The answer that started the follow may already carry a revision: then
+    // the first request waits for the next change straight away.
+    int? revision = since is int ? since : null;
+    var wait = false;
     while (!_disposed && token == _following) {
-      await Future<void>.delayed(const Duration(milliseconds: 800));
+      if (wait || revision == null || misses > 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 800));
+      }
       if (_disposed || token != _following) return;
       // setForeground starts a new loop when the app comes back.
       if (!_foreground) return;
       try {
-        final answer = await connection.status(id);
+        final asked = Stopwatch()..start();
+        final answer = await connection.status(id, since: revision);
+        if (_disposed || token != _following) return;
         misses = 0;
+        final next = answer['revision'];
+        // An unchanged answer that came back at once was not held: pace it.
+        wait = next == revision && asked.elapsedMilliseconds < 1000;
+        revision = next is int ? next : null;
         _apply(answer);
         if (FixStatus.isFinished('${answer['status']}')) return;
       } catch (_) {
@@ -455,6 +508,7 @@ class FixKitController extends ChangeNotifier {
 
   /// Updates the card from a status answer.
   void _apply(Map<String, Object?> answer, {String? comment}) {
+    if (_disposed) return;
     final status = '${answer['status']}';
     final activity = answer['activity'];
     final steps = activity is List ? activity.map(FixStep.fromJson).whereType<FixStep>().toList() : const <FixStep>[];
@@ -477,16 +531,15 @@ class FixKitController extends ChangeNotifier {
       if (status != FixStatus.needsInput) {
         _hideTimer = Timer(const Duration(seconds: 7), () {
           _run = null;
-          _notify();
         });
       }
     }
-    _notify();
   }
 
   Timer? _noticeTimer;
 
   void _showNotice(FixNotice notice) {
+    if (_disposed) return;
     _noticeTimer?.cancel();
     _notice = notice;
     // A finished run gives way to the notice now rather than in 7 seconds.
@@ -495,27 +548,24 @@ class FixKitController extends ChangeNotifier {
       _hideTimer?.cancel();
       _run = null;
     }
-    _notify();
     _noticeTimer = Timer(const Duration(seconds: 6), () {
       _notice = null;
-      _notify();
     });
   }
 
-  void _notify() {
-    if (!_disposed) notifyListeners();
-  }
-
-  @override
   void dispose() {
-    _disposed = true;
     _target?.discard();
-    _target = null;
+    _disposed = true;
     _presenceTimer?.cancel();
     _hideTimer?.cancel();
     _noticeTimer?.cancel();
     draft.dispose();
-    super.dispose();
+    _targetNotifier.dispose();
+    _runNotifier.dispose();
+    _noticeNotifier.dispose();
+    _expandedNotifier.dispose();
+    _workingNotifier.dispose();
+    _presenceNotifier.dispose();
   }
 }
 

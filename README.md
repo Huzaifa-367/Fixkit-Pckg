@@ -12,7 +12,7 @@ Add fixkit to your app's `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  fixkit: ^0.1.0
+  fixkit: ^0.1.1
 ```
 
 Or from GitHub:
@@ -22,7 +22,7 @@ dependencies:
   fixkit:
     git:
       url: https://github.com/Huzaifa-367/Fixkit-Pckg.git
-      ref: v0.1.0
+      ref: v0.1.1
 ```
 
 Then:
@@ -90,13 +90,12 @@ The screenshot is also attached as an image.
 
 ## What it looks like in the app
 
-- **The edge glow.** While you talk to the agent, the screen edge glows in the agent's colours. It stays on, softer, while the agent works, so you can tell at a glance that a fix is in progress.
 - **Any widget, even interactive ones.** Long press works on text fields, buttons, `InkWell`s and `GestureDetector`s with their own long press, list items and sliders. fixkit watches the finger itself instead of competing for the gesture. It fires just before Flutter's own long press, then cancels the press for the widget underneath, so the widget doesn't react:
   - text is not selected;
   - the button does not tap;
   - the app's own long-press menu does not open.
 
-  Moving the finger (a scroll) or using a second finger (a pinch) cancels the press.
+  A ring under the finger fills while you hold, so you can see the press coming. Moving the finger (a scroll) or using a second finger (a pinch) cancels the press.
 - **Select a Row, Column or card.** The composer's selection bar lists the pressed widget and the widgets of your own code around it, for example `Text › Row › Padding › TransactionRow › Column`. Tap one, or use **−** and **+**, to move the selection. The light glides to it and the label shows its file and line. The report is then about that widget (its spacing, alignment or children), and it still says which widget was under the finger. Suggestions change to fit, such as *Align the items* for a Row.
 - **The composer.** The selected widget is lit and labelled with its file and line. Above the keyboard there are three compact rows:
   - the selection bar;
@@ -109,7 +108,10 @@ The screenshot is also attached as an image.
   - *Hot reloaded*
   - *Fixed*, followed by the agent's summary typed out
 
-  Tap the card to fold it into a pill, or ✕ to close it (the agent keeps working). The hub notices the agent's edits by watching the widget's files, so the card stays live with any agent. Agents can add their own notes with the optional `fix_progress` tool.
+  Each step appears the moment the hub hears of it: the app keeps one request open that the hub answers as soon as the report changes, rather than polling. The hub notices the agent's edits by watching your project's `lib` folder, so the card stays live with any agent. Agents can add their own notes with the optional `fix_progress` tool. A timer beside the title shows how long the agent has been at it.
+
+  Tap the card to fold it into a pill, or ✕ to close it (the agent keeps working).
+- **Light on the app.** The overlay uses Flutter's own `ValueNotifier`s and painters, with no blur and no extra packages. Your app never rebuilds because of fixkit: a status change repaints the card, a presence check repaints the badge, and the hold ring and spotlight repaint in layers of their own.
 
 The animated walkthrough in [`docs/demo.html`](docs/demo.html) shows the whole flow; open it in a browser.
 

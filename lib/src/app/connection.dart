@@ -24,8 +24,10 @@ abstract class FixConnection {
   /// Sends a report; answers with its id.
   Future<Map<String, Object?>> report(Map<String, Object?> body);
 
-  /// The status of one report.
-  Future<Map<String, Object?>> status(String id);
+  /// The status of one report. With [since] (the `revision` of the last
+  /// answer) the hub holds the request until the report changes, or for
+  /// about 20 seconds, so changes arrive as they happen.
+  Future<Map<String, Object?>> status(String id, {int? since});
 
   /// Says the app launched (`launch`) or hot reloaded (`reload`); answers with
   /// the report the app should follow, if any. Never throws.

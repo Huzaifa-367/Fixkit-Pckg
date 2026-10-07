@@ -1,5 +1,5 @@
+import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:flutter/cupertino.dart' show DefaultCupertinoLocalizations;
 import 'package:flutter/material.dart';
@@ -11,7 +11,7 @@ import 'inspector.dart';
 /// fixkit's accent, kept for the pressed-widget label.
 const Color fixTint = Color(0xFFD97757);
 
-/// The agent's colours: the orb, the edge glow, the send button.
+/// The agent's colours: the orb, the spotlight ring, the send button.
 const List<Color> fixAgentColors = [
   Color(0xFFFF8A65),
   Color(0xFFB388FF),
@@ -20,7 +20,7 @@ const List<Color> fixAgentColors = [
   Color(0xFFFF8A65),
 ];
 
-const Color _glassDark = Color(0xD91A1C28);
+const Color _glassDark = Color(0xF21A1C28);
 const Color _glassEdge = Color(0x2EFFFFFF);
 const Color _textStrong = Color(0xFFFFFFFF);
 const Color _textSoft = Color(0xD9FFFFFF);
@@ -50,6 +50,9 @@ List<Color> _toneColors(FixTone? tone) => switch (tone) {
 
 /// A small living sphere that stands for the agent. It turns faster and
 /// breathes while the agent works, and takes the colour of the outcome.
+///
+/// It repaints from its animation without rebuilding, inside its own
+/// repaint boundary, and holds still when the system asks for less motion.
 class FixOrb extends StatefulWidget {
   const FixOrb({super.key, this.size = 24, this.busy = false, this.tone});
 
@@ -64,16 +67,31 @@ class FixOrb extends StatefulWidget {
 }
 
 class _FixOrbState extends State<FixOrb> with SingleTickerProviderStateMixin {
-  late final AnimationController _turn = AnimationController(vsync: this, duration: _period)..repeat();
+  late final AnimationController _turn = AnimationController(vsync: this, duration: _period);
 
-  Duration get _period => Duration(milliseconds: widget.busy ? 1500 : 3600);
+  Duration get _period => Duration(milliseconds: widget.busy ? 1500 : 4800);
+
+  void _run() {
+    final still = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    if (still) {
+      _turn.stop();
+    } else if (!_turn.isAnimating) {
+      _turn.repeat();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _run();
+  }
 
   @override
   void didUpdateWidget(FixOrb oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.busy != widget.busy) {
       _turn.duration = _period;
-      _turn.repeat();
+      if (_turn.isAnimating) _turn.repeat();
     }
   }
 
@@ -86,42 +104,42 @@ class _FixOrbState extends State<FixOrb> with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return RepaintBoundary(
-      child: AnimatedBuilder(
-        animation: _turn,
-        builder: (context, _) => CustomPaint(
-          size: Size.square(widget.size),
-          painter: _OrbPainter(turn: _turn.value, busy: widget.busy, colors: _toneColors(widget.tone)),
-        ),
+      child: CustomPaint(
+        size: Size.square(widget.size),
+        painter: _OrbPainter(turn: _turn, busy: widget.busy, colors: _toneColors(widget.tone)),
       ),
     );
   }
 }
 
 class _OrbPainter extends CustomPainter {
-  _OrbPainter({required this.turn, required this.busy, required this.colors});
+  _OrbPainter({required this.turn, required this.busy, required this.colors}) : super(repaint: turn);
 
-  final double turn;
+  final Animation<double> turn;
   final bool busy;
   final List<Color> colors;
 
   @override
   void paint(Canvas canvas, Size size) {
+    final t = turn.value;
     final center = size.center(Offset.zero);
-    final breathe = busy ? 1 + 0.07 * math.sin(turn * math.pi * 4) : 1.0;
-    final radius = size.shortestSide / 2 * 0.86 * breathe;
+    final breathe = busy ? 1 + 0.07 * math.sin(t * math.pi * 4) : 1.0;
+    final radius = size.shortestSide / 2 * 0.8 * breathe;
     final bounds = Rect.fromCircle(center: center, radius: radius);
 
+    // A soft glow from a gradient, not a blur: no offscreen pass.
     canvas.drawCircle(
       center,
-      radius * 1.05,
+      radius * 1.25,
       Paint()
-        ..color = colors[1].withAlpha(busy ? 150 : 90)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, radius * 0.55),
+        ..shader = RadialGradient(
+          colors: [colors[1].withAlpha(busy ? 120 : 70), colors[1].withAlpha(0)],
+        ).createShader(Rect.fromCircle(center: center, radius: radius * 1.25)),
     );
     canvas.drawCircle(
       center,
       radius,
-      Paint()..shader = SweepGradient(colors: colors, transform: GradientRotation(turn * math.pi * 2)).createShader(bounds),
+      Paint()..shader = SweepGradient(colors: colors, transform: GradientRotation(t * math.pi * 2)).createShader(bounds),
     );
     // A second, counter-rotating layer makes the colours swirl like liquid.
     canvas.drawCircle(
@@ -129,7 +147,7 @@ class _OrbPainter extends CustomPainter {
       radius,
       Paint()
         ..shader = RadialGradient(
-          center: Alignment(math.cos(-turn * math.pi * 2) * 0.5, math.sin(-turn * math.pi * 2) * 0.5),
+          center: Alignment(math.cos(-t * math.pi * 2) * 0.5, math.sin(-t * math.pi * 2) * 0.5),
           radius: 0.9,
           colors: [colors[2].withAlpha(170), colors[2].withAlpha(0)],
         ).createShader(bounds),
@@ -160,149 +178,43 @@ class _OrbPainter extends CustomPainter {
 }
 
 // ---------------------------------------------------------------------------
-// The edge glow
-// ---------------------------------------------------------------------------
-
-/// A glow that runs around the edge of the screen while fixkit has the
-/// agent's attention: bright while composing, softer while the agent works.
-class FixAura extends StatefulWidget {
-  const FixAura({super.key, required this.strength});
-
-  /// 0 hides it; 1 is full brightness.
-  final double strength;
-
-  @override
-  State<FixAura> createState() => _FixAuraState();
-}
-
-class _FixAuraState extends State<FixAura> with SingleTickerProviderStateMixin {
-  late final AnimationController _turn = AnimationController(vsync: this, duration: const Duration(seconds: 5));
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.strength > 0) _turn.repeat();
-  }
-
-  @override
-  void didUpdateWidget(FixAura oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.strength > 0 && !_turn.isAnimating) _turn.repeat();
-  }
-
-  @override
-  void dispose() {
-    _turn.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final radius = MediaQuery.sizeOf(context).shortestSide < 600 ? 44.0 : 14.0;
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0, end: widget.strength),
-      duration: const Duration(milliseconds: 520),
-      curve: Curves.easeOutCubic,
-      onEnd: () {
-        if (widget.strength == 0) _turn.stop();
-      },
-      builder: (context, strength, _) {
-        if (strength <= 0.01) return const SizedBox.expand();
-        return RepaintBoundary(
-          child: AnimatedBuilder(
-            animation: _turn,
-            builder: (context, _) => CustomPaint(
-              size: Size.infinite,
-              painter: _AuraPainter(turn: _turn.value, strength: strength, radius: radius),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _AuraPainter extends CustomPainter {
-  _AuraPainter({required this.turn, required this.strength, required this.radius});
-
-  final double turn;
-  final double strength;
-  final double radius;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final bounds = Offset.zero & size;
-    final shader = SweepGradient(
-      colors: fixAgentColors,
-      transform: GradientRotation(turn * math.pi * 2),
-    ).createShader(bounds);
-    final edge = RRect.fromRectAndRadius(bounds.deflate(1.5), Radius.circular(radius));
-
-    canvas.saveLayer(bounds, Paint()..color = Color.fromRGBO(0, 0, 0, strength.clamp(0.0, 1.0).toDouble()));
-    canvas.drawRRect(
-      edge,
-      Paint()
-        ..shader = shader
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 16
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16),
-    );
-    canvas.drawRRect(
-      edge,
-      Paint()
-        ..shader = shader
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3,
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(_AuraPainter oldDelegate) =>
-      oldDelegate.turn != turn || oldDelegate.strength != strength || oldDelegate.radius != radius;
-}
-
-// ---------------------------------------------------------------------------
 // Glass
 // ---------------------------------------------------------------------------
 
+/// A dark glass surface. Drawn with a gradient and a hairline edge, without a
+/// backdrop blur: a blur has to be redrawn whenever anything beneath it
+/// changes, which is what made scrolling under the agent card and typing in
+/// the composer stutter.
 class _Glass extends StatelessWidget {
   const _Glass({required this.child, this.radius = 24, this.padding = EdgeInsets.zero, this.glow});
 
   final Widget child;
   final double radius;
   final EdgeInsets padding;
+
+  /// A coloured halo for raised surfaces (the card, the input bar). Chips have
+  /// none, so they cost a plain fill.
   final Color? glow;
 
   @override
   Widget build(BuildContext context) {
-    final shape = BorderRadius.circular(radius);
     return DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: shape,
-        boxShadow: [
-          const BoxShadow(color: Color(0x66000000), blurRadius: 24, offset: Offset(0, 10)),
-          if (glow != null) BoxShadow(color: glow!, blurRadius: 22, spreadRadius: -4),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: shape,
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: shape,
-              border: Border.all(color: _glassEdge),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color.alphaBlend(const Color(0x14FFFFFF), _glassDark), _glassDark],
-              ),
-            ),
-            child: Padding(padding: padding, child: child),
-          ),
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: _glassEdge),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xF0262938), _glassDark],
         ),
+        boxShadow: glow == null
+            ? null
+            : [
+                const BoxShadow(color: Color(0x59000000), blurRadius: 16, offset: Offset(0, 8)),
+                BoxShadow(color: glow!, blurRadius: 18, spreadRadius: -6),
+              ],
       ),
+      child: Padding(padding: padding, child: child),
     );
   }
 }
@@ -318,7 +230,13 @@ class _Glass extends StatelessWidget {
 /// It sits above the app's own `MaterialApp`, so it brings what a text field
 /// needs: localizations, a theme, a `Material` and an `Overlay`.
 class FixComposer extends StatefulWidget {
-  const FixComposer({super.key, required this.controller, required this.target, required this.lift});
+  const FixComposer({
+    super.key,
+    required this.controller,
+    required this.target,
+    required this.lift,
+    this.liftDuration = _liftDuration,
+  });
 
   final FixKitController controller;
   final FixTarget target;
@@ -326,13 +244,17 @@ class FixComposer extends StatefulWidget {
   /// How far the app is slid up so the keyboard does not cover the widget.
   final double lift;
 
+  /// How long the slide to [lift] takes. Zero while the keyboard itself is
+  /// moving, so the app follows the keyboard instead of chasing it.
+  final Duration liftDuration;
+
   @override
   State<FixComposer> createState() => _FixComposerState();
 }
 
 class _FixComposerState extends State<FixComposer> with SingleTickerProviderStateMixin {
   late final AnimationController _pulse =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))..repeat();
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 1400), value: 0.5);
   final FocusNode _focus = FocusNode(debugLabel: 'fixkit.composer');
   late final OverlayEntry _entry = OverlayEntry(builder: _buildBody);
 
@@ -346,9 +268,24 @@ class _FixComposerState extends State<FixComposer> with SingleTickerProviderStat
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // The ring breathes unless the system asks for less motion.
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+      _pulse
+        ..stop()
+        ..value = 0.5;
+    } else if (!_pulse.isAnimating) {
+      _pulse.repeat();
+    }
+  }
+
+  @override
   void didUpdateWidget(FixComposer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.lift != widget.lift || oldWidget.target != widget.target) {
+    if (oldWidget.lift != widget.lift ||
+        oldWidget.liftDuration != widget.liftDuration ||
+        oldWidget.target != widget.target) {
       _entry.markNeedsBuild();
     }
   }
@@ -413,7 +350,7 @@ class _FixComposerState extends State<FixComposer> with SingleTickerProviderStat
           onTap: _cancel,
           child: TweenAnimationBuilder<double>(
             tween: Tween<double>(begin: 0, end: widget.lift),
-            duration: _liftDuration,
+            duration: widget.liftDuration,
             curve: _liftCurve,
             builder: (context, lift, _) => TweenAnimationBuilder<Rect?>(
               // The light glides to the new widget when the selection moves.
@@ -427,11 +364,11 @@ class _FixComposerState extends State<FixComposer> with SingleTickerProviderStat
                 return Stack(
                   fit: StackFit.expand,
                   children: [
-                    AnimatedBuilder(
-                      animation: _pulse,
-                      builder: (context, _) => CustomPaint(
-                        painter: _SpotlightPainter(rect: rect, touch: touch, phase: _pulse.value),
-                      ),
+                    // The dim repaints only when the light moves; the ring
+                    // animates in its own layer, without rebuilding anything.
+                    CustomPaint(painter: _DimPainter(rect: rect, touch: touch)),
+                    RepaintBoundary(
+                      child: CustomPaint(painter: _RingPainter(rect: rect, touch: touch, phase: _pulse)),
                     ),
                     if (label != null)
                       CustomSingleChildLayout(
@@ -451,9 +388,8 @@ class _FixComposerState extends State<FixComposer> with SingleTickerProviderStat
           left: 10,
           right: 10,
           bottom: bottom,
-          child: ListenableBuilder(
-            listenable: widget.controller,
-            builder: (context, _) => Column(
+          child: RepaintBoundary(
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -652,9 +588,16 @@ class _Presence extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final agent = controller.agent;
-    final name = agent ?? 'Your agent';
-    final (Color dot, String text, String detail) = switch (controller.presence) {
+    // Only the badge rebuilds when presence changes.
+    return ValueListenableBuilder<FixPresenceInfo>(
+      valueListenable: controller.presenceListenable,
+      builder: (context, info, _) => _badge(info),
+    );
+  }
+
+  Widget _badge(FixPresenceInfo info) {
+    final name = info.agent ?? 'Your agent';
+    final (Color dot, String text, String detail) = switch (info.state) {
       FixPresence.watching => (_green, '$name is watching', '$name gets this as soon as you send it'),
       FixPresence.busy => (_blue, '$name is busy', '$name is finishing another fix; this one is next'),
       FixPresence.idle => (_amber, '$name is idle', 'Say "watch for fixes" in the $name chat, then send'),
@@ -869,58 +812,73 @@ class _LabelLayout extends SingleChildLayoutDelegate {
   bool shouldRelayout(_LabelLayout oldDelegate) => oldDelegate.anchor != anchor || oldDelegate.topInset != topInset;
 }
 
-class _SpotlightPainter extends CustomPainter {
-  _SpotlightPainter({required this.rect, required this.touch, required this.phase});
+/// The light's shape: kept inside the screen, so the ring is never cut by
+/// its edge.
+RRect _holeFor(Rect? rect, Offset touch, Size size) {
+  final bounds = (Offset.zero & size).deflate(4);
+  final raw = rect == null ? Rect.fromCircle(center: touch, radius: 28) : rect.inflate(6);
+  final area = raw.intersect(bounds).isEmpty ? raw : raw.intersect(bounds);
+  return RRect.fromRectAndRadius(area, Radius.circular(rect == null ? 28 : 12));
+}
+
+/// The dimmed screen with the selected widget left clear. Static: it
+/// repaints only when the selection or the lift moves it.
+class _DimPainter extends CustomPainter {
+  _DimPainter({required this.rect, required this.touch});
 
   final Rect? rect;
   final Offset touch;
 
-  /// 0..1, repeating: turns the glow's colours.
-  final double phase;
-
   @override
   void paint(Canvas canvas, Size size) {
-    // Kept inside the screen, so the ring is never cut by its edge.
-    final bounds = (Offset.zero & size).deflate(4);
-    final raw = rect == null ? Rect.fromCircle(center: touch, radius: 28) : rect!.inflate(6);
-    final area = raw.intersect(bounds).isEmpty ? raw : raw.intersect(bounds);
-    final hole = RRect.fromRectAndRadius(area, Radius.circular(rect == null ? 28 : 12));
-
     final dim = Path()
       ..fillType = PathFillType.evenOdd
       ..addRect(Offset.zero & size)
-      ..addRRect(hole);
+      ..addRRect(_holeFor(rect, touch, size));
     canvas.drawPath(dim, Paint()..color = const Color(0x9E080A14));
-
-    // The halo is drawn outside the hole only, so the widget stays crisp.
-    canvas.save();
-    canvas.clipPath(dim);
-
-    final shader = SweepGradient(
-      colors: fixAgentColors,
-      transform: GradientRotation(phase * math.pi * 2),
-    ).createShader(hole.outerRect.inflate(8));
-    final breathe = 0.5 + 0.5 * math.sin(phase * math.pi * 2);
-    canvas.drawRRect(
-      hole,
-      Paint()
-        ..shader = shader
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 7
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 5 + 6 * breathe),
-    );
-    canvas.restore();
-    canvas.drawRRect(
-      hole,
-      Paint()
-        ..shader = shader
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
   }
 
   @override
-  bool shouldRepaint(_SpotlightPainter oldDelegate) =>
+  bool shouldRepaint(_DimPainter oldDelegate) => oldDelegate.rect != rect || oldDelegate.touch != touch;
+}
+
+/// The turning ring around the selected widget. It repaints from [phase]
+/// without rebuilding, and its halo is a few gradient strokes rather than a
+/// blur.
+class _RingPainter extends CustomPainter {
+  _RingPainter({required this.rect, required this.touch, required this.phase}) : super(repaint: phase);
+
+  final Rect? rect;
+  final Offset touch;
+
+  /// 0..1, repeating: turns the ring's colours.
+  final Animation<double> phase;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final hole = _holeFor(rect, touch, size);
+    final t = phase.value;
+    final rotation = GradientRotation(t * math.pi * 2);
+    final bounds = hole.outerRect.inflate(10);
+    final breathe = 0.5 + 0.5 * math.sin(t * math.pi * 2);
+    // Halo outward (drawn outside the hole, so the widget stays crisp), then the ring.
+    for (final (offset, alpha) in [(6.0, 0.14 + 0.10 * breathe), (3.0, 0.32 + 0.12 * breathe), (0.0, 1.0)]) {
+      final a = (alpha * 255).round();
+      canvas.drawRRect(
+        hole.inflate(offset),
+        Paint()
+          ..shader = SweepGradient(
+            colors: [for (final color in fixAgentColors) color.withAlpha(a)],
+            transform: rotation,
+          ).createShader(bounds)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = offset == 0 ? 2 : 3,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RingPainter oldDelegate) =>
       oldDelegate.rect != rect || oldDelegate.touch != touch || oldDelegate.phase != phase;
 }
 
@@ -938,6 +896,20 @@ class FixAgentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Rebuilds only for the card's own state, in its own layer.
+    return RepaintBoundary(
+      child: ListenableBuilder(
+        listenable: Listenable.merge([
+          controller.runListenable,
+          controller.noticeListenable,
+          controller.expandedListenable,
+        ]),
+        builder: (context, _) => _card(context),
+      ),
+    );
+  }
+
+  Widget _card(BuildContext context) {
     final run = controller.run;
     final notice = controller.notice;
     final width = math.min(MediaQuery.sizeOf(context).width - 24, 420.0);
@@ -1066,6 +1038,7 @@ class _RunCard extends StatelessWidget {
                         ],
                       ),
                     ),
+                    if (!finished) _Elapsed(key: ValueKey(run.comment)),
                     Semantics(
                       button: true,
                       label: 'Close',
@@ -1294,4 +1267,43 @@ class _ArcPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ArcPainter oldDelegate) => false;
+}
+
+/// Seconds since the report was sent, so a quiet stretch still reads as work
+/// going on. Ticks once a second and rebuilds only its own text.
+class _Elapsed extends StatefulWidget {
+  const _Elapsed({super.key});
+
+  @override
+  State<_Elapsed> createState() => _ElapsedState();
+}
+
+class _ElapsedState extends State<_Elapsed> {
+  final Stopwatch _clock = Stopwatch()..start();
+  late final Timer _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _tick.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final seconds = _clock.elapsed.inSeconds;
+    final text = seconds < 60 ? '${seconds}s' : '${seconds ~/ 60}m ${(seconds % 60).toString().padLeft(2, '0')}s';
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 11.5, color: _textDim, fontFeatures: [FontFeature.tabularFigures()]),
+      ),
+    );
+  }
 }

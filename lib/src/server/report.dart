@@ -175,6 +175,37 @@ class FixReport {
   final Map<String, DateTime?> watched = {};
   final Set<String> edited = {};
 
+  /// Counts the changes the app can see (status, message, activity). The app
+  /// sends the last one it saw, and the hub answers once it moves on.
+  int revision = 0;
+  final List<Completer<void>> _changeWaiters = [];
+
+  /// Tells the apps waiting on this report that it changed.
+  void changed() {
+    revision++;
+    final waiters = List.of(_changeWaiters);
+    _changeWaiters.clear();
+    for (final waiter in waiters) {
+      if (!waiter.isCompleted) waiter.complete();
+    }
+  }
+
+  /// Completes when [revision] moves past [since], or after [timeout].
+  Future<void> changeAfter(int since, Duration timeout) {
+    if (revision != since) return Future<void>.value();
+    final waiter = Completer<void>();
+    _changeWaiters.add(waiter);
+    return waiter.future.timeout(timeout, onTimeout: () => _changeWaiters.remove(waiter));
+  }
+
+  /// Answers every waiting app now (the hub is shutting down).
+  void releaseWaiters() {
+    for (final waiter in _changeWaiters) {
+      if (!waiter.isCompleted) waiter.complete();
+    }
+    _changeWaiters.clear();
+  }
+
   /// Adds a line to [activity]. `kind` is `step`, `done`, `error` or
   /// `question`.
   void note(String text, {String kind = 'step'}) {
@@ -183,6 +214,7 @@ class FixReport {
     if (activity.isNotEmpty && activity.last['text'] == line) return;
     activity.add({'text': line.length > 90 ? '${line.substring(0, 87)}...' : line, 'kind': kind, 'at': DateTime.now().toIso8601String()});
     if (activity.length > 30) activity.removeAt(0);
+    changed();
   }
 
   /// What the app's status calls receive.
@@ -193,6 +225,7 @@ class FixReport {
         'comment': comment,
         if (agentName != null) 'agent': agentName,
         'activity': activity,
+        'revision': revision,
         if (announce) 'announce': true,
       };
 
@@ -202,6 +235,7 @@ class FixReport {
     status = next;
     if (!keepMessage) this.message = message;
     updatedAt = DateTime.now();
+    changed();
   }
 
   String? get _route => body['route'] is String ? body['route'] as String : null;

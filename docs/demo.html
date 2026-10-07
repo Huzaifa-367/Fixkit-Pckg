@@ -1007,7 +1007,6 @@ footer a { color: inherit; }
               <span class="send" id="send">↑</span>
             </div>
           </div>
-          <div class="aura" aria-hidden="true"></div>
           <div class="finger" id="finger"><svg viewBox="0 0 68 68"><circle cx="34" cy="34" r="32"></circle></svg></div>
           <div class="island" id="island"><div class="card-in" id="cardIn"></div></div>
           <div class="home-ind"></div>
@@ -1293,10 +1292,7 @@ footer a { color: inherit; }
     card(cardFor(i, late));
   }
 
-  function setAura(mode) {
-    screen.classList.toggle('aura-strong', mode === 'strong');
-    screen.classList.toggle('aura-soft', mode === 'soft');
-  }
+  function setAura() {}
 
   function setPresence() {
     renderSuggestions();
@@ -1396,7 +1392,7 @@ Screenshot: .fixkit/reports/r1.png`;
     },
     {
       label: 'Ask the agent', dur: 3400,
-      caption: 'The screen edge lights up: you are talking to your agent. + and − widen the selection from the Text to its Row, Column or card. One row shows who is watching and suggestions that fit; everything stays above the keyboard.',
+      caption: 'The composer opens on the pressed widget. + and − widen the selection from the Text to its Row, Column or card. One row shows who is watching and suggestions that fit; everything stays above the keyboard.',
       enter() {
         scopeIndex = 0;
         renderCrumbs();

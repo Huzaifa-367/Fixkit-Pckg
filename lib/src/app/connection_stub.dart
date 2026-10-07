@@ -12,7 +12,7 @@ class _NoConnection implements FixConnection {
       Future.error(const FixHubUnreachable('fixkit runs on Android, iOS and desktop, not on the web'));
 
   @override
-  Future<Map<String, Object?>> status(String id) =>
+  Future<Map<String, Object?>> status(String id, {int? since}) =>
       Future.error(const FixHubUnreachable('not supported on this platform'));
 
   @override

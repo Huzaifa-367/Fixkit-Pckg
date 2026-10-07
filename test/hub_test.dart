@@ -295,7 +295,55 @@ void main() {
 
   test('hello lists what the hub can do', () async {
     final hello = await client.hello();
-    expect(hello?['features'], containsAll(['activity', 'presence']));
+    expect(hello?['features'], containsAll(['activity', 'presence', 'live-status']));
+  });
+
+  test('a status request with since waits for the next change', () async {
+    await register('Cursor');
+    final next = get('/agent/next', {'agent': 'Cursor', 'timeout': '5'});
+    await post('/report', appReport(project));
+    await next;
+    final first = await get('/status', {'id': 'r1'});
+    final revision = first?['revision'] as int;
+
+    // Nothing changed: the request is held.
+    final asked = Stopwatch()..start();
+    final waiting = get('/status', {'id': 'r1', 'since': '$revision', 'wait': '10'});
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    await post('/agent/progress', {'id': 'r1', 'message': 'Reading the theme'});
+    final changed = await waiting;
+    expect(asked.elapsedMilliseconds, greaterThanOrEqualTo(250));
+    expect(asked.elapsedMilliseconds, lessThan(5000));
+    expect(changed?['revision'] as int, greaterThan(revision));
+    expect([for (final line in changed?['activity'] as List) (line as Map)['text']], contains('Reading the theme'));
+
+    // An older revision is answered at once; a quiet report after the wait.
+    final stale = await get('/status', {'id': 'r1', 'since': '$revision', 'wait': '10'});
+    expect(stale?['revision'], changed?['revision']);
+    final quiet = Stopwatch()..start();
+    final same = await get('/status', {'id': 'r1', 'since': '${changed?['revision']}', 'wait': '1'});
+    expect(quiet.elapsedMilliseconds, greaterThanOrEqualTo(900));
+    expect(same?['revision'], changed?['revision']);
+  });
+
+  test('edits to any file in lib show in the activity', () async {
+    await register('Cursor');
+    final next = get('/agent/next', {'agent': 'Cursor', 'timeout': '5'});
+    await post('/report', appReport(project));
+    await next;
+    await post('/agent/ack', {'id': 'r1'});
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    // A file in lib, and one in a folder the agent creates.
+    File('${project.path}/lib/theme.dart').writeAsStringSync('// theme\n');
+    File('${project.path}/lib/src/widgets/badge.dart').createSync(recursive: true);
+    Map<String, Object?>? status;
+    for (var i = 0; i < 30; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      status = await get('/status', {'id': 'r1'});
+      final activity = '${status?['activity']}';
+      if (activity.contains('Edited theme.dart') && activity.contains('Edited badge.dart')) break;
+    }
+    expect('${status?['activity']}', allOf(contains('Edited theme.dart'), contains('Edited badge.dart')));
   });
 
   test('a queued report says why in its activity', () async {

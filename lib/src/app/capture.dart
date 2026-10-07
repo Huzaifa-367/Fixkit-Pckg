@@ -60,7 +60,7 @@ class FixCapture {
 /// Captures the app under [boundaryKey]. Call it after a frame has painted
 /// (`SchedulerBinding.endOfFrame`): a repaint boundary can only be captured
 /// once it is painted.
-Future<FixCapture?> captureApp(GlobalKey boundaryKey, {double maxPixelRatio = 2}) async {
+Future<FixCapture?> captureApp(GlobalKey boundaryKey, {double maxPixelRatio = 2, Offset? origin}) async {
   final context = boundaryKey.currentContext;
   if (context == null) return null;
   final boundary = context.findRenderObject();
@@ -68,7 +68,7 @@ Future<FixCapture?> captureApp(GlobalKey boundaryKey, {double maxPixelRatio = 2}
     return null;
   }
   final ratio = math.min(View.of(context).devicePixelRatio, maxPixelRatio);
-  final origin = boundary.localToGlobal(Offset.zero);
+  final at = origin ?? boundary.localToGlobal(Offset.zero);
   final image = await boundary.toImage(pixelRatio: ratio);
-  return FixCapture._(image, ratio, origin);
+  return FixCapture._(image, ratio, at);
 }

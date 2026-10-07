@@ -62,7 +62,7 @@ class FixKit extends StatefulWidget {
   State<FixKit> createState() => _FixKitState();
 }
 
-class _FixKitState extends State<FixKit> with WidgetsBindingObserver {
+class _FixKitState extends State<FixKit> with WidgetsBindingObserver, TickerProviderStateMixin {
   FixKitController? _controller;
   final GlobalKey _boundary = GlobalKey(debugLabel: 'fixkit.app');
 
@@ -75,12 +75,19 @@ class _FixKitState extends State<FixKit> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _hold = AnimationController(vsync: this, duration: _ringDuration);
+    _pop = AnimationController(vsync: this, duration: const Duration(milliseconds: 320));
     if (_active) _start();
   }
+
+  /// The agent card, built once: it listens to its own state, so the root's
+  /// rebuilds (metrics, a press) pass it by.
+  Widget? _card;
 
   void _start() {
     final controller = FixKitController(widget.connection ?? createConnection());
     _controller = controller;
+    _card = FixKitChrome(child: FixAgentCard(controller: controller));
     WidgetsBinding.instance.addObserver(this);
     // Tells the hub the app is up: during a fix that means the fix is on
     // screen, whatever started the app.
@@ -91,6 +98,7 @@ class _FixKitState extends State<FixKit> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _controller?.dispose();
     _controller = null;
+    _card = null;
   }
 
   @override
@@ -145,8 +153,32 @@ class _FixKitState extends State<FixKit> with WidgetsBindingObserver {
   void dispose() {
     _reset();
     if (_controller != null) _stop();
+    _hold.dispose();
+    _pop.dispose();
+    _holdAt.dispose();
     super.dispose();
   }
+
+  // ---- The hold ring -----------------------------------------------------------
+  //
+  // A ring under the finger fills while the press is held, and bursts when it
+  // opens the composer. It paints from its animations alone: no rebuilds.
+
+  late final AnimationController _hold;
+  late final AnimationController _pop;
+  final ValueNotifier<Offset?> _holdAt = ValueNotifier(null);
+  Offset? _popAt;
+  Timer? _ringTimer;
+
+  /// The ring stays away for the first moment of a press, so taps (most
+  /// presses) never start it, then fills over the rest of the press.
+  static const Duration _ringDelay = Duration(milliseconds: 120);
+  Duration get _ringDuration {
+    final rest = widget.pressDuration - _ringDelay;
+    return rest > const Duration(milliseconds: 50) ? rest : const Duration(milliseconds: 50);
+  }
+
+  bool get _reduceMotion => WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations;
 
   // ---- The press -------------------------------------------------------------
   //
@@ -158,6 +190,7 @@ class _FixKitState extends State<FixKit> with WidgetsBindingObserver {
   final Set<int> _down = {};
   int? _pointer;
   Offset? _downAt;
+  double _slop = kTouchSlop;
   Timer? _timer;
 
   void _onDown(PointerDownEvent event) {
@@ -173,6 +206,20 @@ class _FixKitState extends State<FixKit> with WidgetsBindingObserver {
     if (event.kind == PointerDeviceKind.mouse && event.buttons != kPrimaryMouseButton) return;
     _pointer = event.pointer;
     _downAt = event.position;
+    _ringTimer?.cancel();
+    final at = event.position;
+    _ringTimer = Timer(_ringDelay, () {
+      if (!mounted) return;
+      _holdAt.value = at;
+      _hold
+        ..duration = _ringDuration
+        ..forward(from: 0);
+    });
+    // The same slop the app's scrollables use, so a slow scroll never turns
+    // into a long press. Worked out once per press, not per move.
+    _slop = event.kind == PointerDeviceKind.mouse
+        ? 4.0
+        : computeHitSlop(event.kind, DeviceGestureSettings.fromView(View.of(context)));
     _timer?.cancel();
     _timer = Timer(widget.pressDuration, () => _fire(event.pointer, event.position));
   }
@@ -180,12 +227,7 @@ class _FixKitState extends State<FixKit> with WidgetsBindingObserver {
   void _onMove(PointerMoveEvent event) {
     final start = _downAt;
     if (event.pointer != _pointer || start == null) return;
-    // The same slop the app's scrollables use, so a slow scroll never turns
-    // into a long press.
-    final slop = event.kind == PointerDeviceKind.mouse
-        ? 4.0
-        : computeHitSlop(event.kind, DeviceGestureSettings.fromView(View.of(context)));
-    if ((event.position - start).distance > slop) _reset();
+    if ((event.position - start).distance > _slop) _reset();
   }
 
   void _onEnd(PointerEvent event) {
@@ -196,13 +238,25 @@ class _FixKitState extends State<FixKit> with WidgetsBindingObserver {
   void _reset() {
     _timer?.cancel();
     _timer = null;
+    _ringTimer?.cancel();
+    _ringTimer = null;
     _pointer = null;
     _downAt = null;
+    if (_hold.isAnimating || _hold.value > 0) {
+      _hold
+        ..stop()
+        ..value = 0;
+    }
+    _holdAt.value = null;
   }
 
   void _fire(int pointer, Offset position) {
     _reset();
     if (!mounted || _controller == null || _controller!.busy) return;
+    if (!_reduceMotion) {
+      _popAt = position;
+      _pop.forward(from: 0);
+    }
     // The press is fixkit's now: every recognizer on this finger gets a
     // cancel, so the widget under it neither taps nor long presses.
     GestureBinding.instance.cancelPointer(pointer);
@@ -222,13 +276,21 @@ class _FixKitState extends State<FixKit> with WidgetsBindingObserver {
     }
 
     _pressSize = View.of(context).physicalSize;
+    // Where the app sits before the lift moves it: the outline is drawn
+    // against this, however far the app has slid by the time it is captured.
+    final box = _boundary.currentContext?.findRenderObject();
+    final origin = box is RenderBox && box.hasSize ? box.localToGlobal(Offset.zero) : null;
     HapticFeedback.mediumImpact();
-    // The capture waits for the frame that settles the press (a cancelled ink
-    // splash, say). The composer is drawn outside the captured boundary, and
-    // the outline goes on at send time, around the final selection.
+    // The capture waits until the composer has opened, so reading the screen
+    // back never competes with its entrance animation, and stays at a modest
+    // resolution. The composer is drawn outside the captured boundary, and the
+    // outline goes on at send time, around the final selection.
     final Future<FixCapture?> capture = !widget.screenshots
         ? Future<FixCapture?>.value()
-        : SchedulerBinding.instance.endOfFrame.then((_) => captureApp(_boundary)).catchError((Object error) {
+        : Future<void>.delayed(const Duration(milliseconds: 320))
+            .then((_) => SchedulerBinding.instance.endOfFrame)
+            .then((_) => mounted ? captureApp(_boundary, maxPixelRatio: 1.5, origin: origin) : null)
+            .catchError((Object error) {
             debugPrint('fixkit: no screenshot: $error');
             return null;
           });
@@ -244,27 +306,44 @@ class _FixKitState extends State<FixKit> with WidgetsBindingObserver {
       textDirection: TextDirection.ltr,
       child: MediaQuery.fromView(
         view: View.of(context),
-        child: ListenableBuilder(
-          listenable: controller,
-          builder: (context, _) => _layout(context, controller),
+        // Rebuilds only when a press opens or closes the composer (and on
+        // metrics changes, as any app root does). The agent card and the hold
+        // ring listen to their own state below.
+        child: ValueListenableBuilder<FixTarget?>(
+          valueListenable: controller.targetListenable,
+          builder: (context, target, _) => _layout(context, controller, target),
         ),
       ),
     );
   }
 
-  Widget _layout(BuildContext context, FixKitController controller) {
+  /// The keyboard's height while composing.
+  double _keyboard = 0;
+  double _lastInset = 0;
+
+  Widget _layout(BuildContext context, FixKitController controller, FixTarget? target) {
     final media = MediaQuery.of(context);
-    final target = controller.target;
     if (target == null || _appMedia == null) _appMedia = media;
     final appMedia = target == null ? media : _appMedia!;
+    // While the keyboard slides, the lift follows it frame by frame (its
+    // insets are already smooth); a tween would restart every frame. Other
+    // changes, a new selection say, glide.
+    final inset = media.viewInsets.bottom;
+    final keyboardMoving = target != null && inset != _lastInset;
+    _lastInset = inset;
+    // The lift tracks the keyboard both ways: up as it opens, down when the
+    // system's back button hides it.
+    _keyboard = target == null ? 0 : inset;
+    final liftDuration = keyboardMoving ? Duration.zero : const Duration(milliseconds: 260);
+    final lift = _lift(target, media);
 
     return Stack(
       fit: StackFit.expand,
       children: [
         TweenAnimationBuilder<double>(
           key: const ValueKey('fixkit.app'),
-          tween: Tween<double>(begin: 0, end: _lift(target, media)),
-          duration: const Duration(milliseconds: 260),
+          tween: Tween<double>(begin: 0, end: lift),
+          duration: liftDuration,
           curve: Curves.easeOutCubic,
           builder: (context, lift, child) => Transform.translate(offset: Offset(0, -lift), child: child),
           child: Listener(
@@ -281,28 +360,37 @@ class _FixKitState extends State<FixKit> with WidgetsBindingObserver {
             ),
           ),
         ),
+        // The hold ring under the finger.
+        Positioned.fill(
+          key: const ValueKey('fixkit.hold'),
+          child: IgnorePointer(
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: _HoldPainter(
+                  hold: _hold,
+                  at: _holdAt,
+                  pop: _pop,
+                  popAt: () => _popAt,
+                  delay: _ringDelay,
+                  press: widget.pressDuration,
+                ),
+              ),
+            ),
+          ),
+        ),
         if (target != null)
           Positioned.fill(
             key: const ValueKey('fixkit.composer'),
-            child: FixComposer(controller: controller, target: target, lift: _lift(target, media)),
+            child: FixComposer(controller: controller, target: target, lift: lift, liftDuration: liftDuration),
           ),
-        // The screen edge glows while fixkit has the agent's attention.
-        Positioned.fill(
-          key: const ValueKey('fixkit.aura'),
-          child: IgnorePointer(
-            child: FixAura(strength: target != null ? 1 : (controller.working ? 0.55 : 0)),
-          ),
-        ),
         Positioned(
           key: const ValueKey('fixkit.card'),
           top: 0,
           left: 0,
           right: 0,
-          child: FixKitChrome(
-            child: Padding(
-              padding: EdgeInsets.only(top: media.padding.top + 6),
-              child: Align(alignment: Alignment.topCenter, child: FixAgentCard(controller: controller)),
-            ),
+          child: Padding(
+            padding: EdgeInsets.only(top: media.padding.top + 6),
+            child: Align(alignment: Alignment.topCenter, child: _card),
           ),
         ),
       ],
@@ -315,10 +403,96 @@ class _FixKitState extends State<FixKit> with WidgetsBindingObserver {
     if (target == null) return 0;
     final inspection = target.inspection;
     final rect = inspection.spotRect ?? Rect.fromCircle(center: inspection.touch, radius: 28);
-    final keyboardTop = media.size.height - media.viewInsets.bottom - fixComposerBarHeight - 24;
+    final keyboardTop = media.size.height - _keyboard - fixComposerBarHeight - 24;
     final overlap = rect.bottom + 16 - keyboardTop;
     if (overlap <= 0) return 0;
     final room = math.max(0.0, rect.top - media.padding.top - 48);
     return math.min(overlap, room);
   }
+}
+
+/// The ring under a held finger: a faint track, an arc that fills over the
+/// press, and a burst when the composer opens. It appears only after a short
+/// moment, so ordinary taps never flash it.
+class _HoldPainter extends CustomPainter {
+  _HoldPainter({
+    required this.hold,
+    required this.at,
+    required this.pop,
+    required this.popAt,
+    required this.delay,
+    required this.press,
+  }) : super(repaint: Listenable.merge([hold, at, pop]));
+
+  /// 0 to 1 over the part of the press after [delay].
+  final Animation<double> hold;
+  final ValueListenable<Offset?> at;
+  final AnimationController pop;
+  final Offset? Function() popAt;
+  final Duration delay;
+  final Duration press;
+
+  static const double _radius = 30;
+  static const _colors = [Color(0xFFFF8A65), Color(0xFFB388FF), Color(0xFF4FC3F7), Color(0xFF5EEAD4), Color(0xFFFF8A65)];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = at.value;
+    if (center != null && hold.value > 0) {
+      // Fades in over 80 ms; the arc shows the whole press, so it starts
+      // part filled (the moment before the ring appeared).
+      final total = math.max(1, press.inMilliseconds);
+      final ringMs = math.max(1, total - delay.inMilliseconds);
+      final opacity = (hold.value * ringMs / 80).clamp(0.0, 1.0);
+      final progress = ((delay.inMilliseconds + hold.value * ringMs) / total).clamp(0.0, 1.0);
+      if (opacity > 0) {
+        final alpha = (opacity * 255).round();
+        final rect = Rect.fromCircle(center: center, radius: _radius);
+        canvas.drawCircle(center, _radius + 6, Paint()..color = Color.fromARGB((opacity * 40).round(), 255, 255, 255));
+        canvas.drawCircle(
+          center,
+          _radius,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 3.5
+            ..color = Color.fromARGB((opacity * 90).round(), 255, 255, 255),
+        );
+        canvas.drawArc(
+          rect,
+          -math.pi / 2,
+          math.pi * 2 * progress,
+          false,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 3.5
+            ..strokeCap = StrokeCap.round
+            ..shader = SweepGradient(
+              colors: [for (final color in _colors) color.withAlpha(alpha)],
+              transform: const GradientRotation(-math.pi / 2),
+            ).createShader(rect),
+        );
+      }
+    }
+    final burstAt = popAt();
+    final t = pop.value;
+    if (burstAt != null && pop.isAnimating) {
+      final eased = Curves.easeOutCubic.transform(t);
+      canvas.drawCircle(
+        burstAt,
+        _radius + 24 * eased,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3 * (1 - eased) + 0.5
+          ..color = Color.fromARGB(((1 - t) * 220).round(), 179, 136, 255),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_HoldPainter oldDelegate) =>
+      oldDelegate.hold != hold ||
+      oldDelegate.at != at ||
+      oldDelegate.pop != pop ||
+      oldDelegate.delay != delay ||
+      oldDelegate.press != press;
 }

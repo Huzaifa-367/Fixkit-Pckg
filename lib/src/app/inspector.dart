@@ -254,6 +254,12 @@ FixInspection inspectAt(Offset position, int viewId) {
 /// Inspects [hit], the deepest element under [touch], and its ancestors.
 FixInspection inspectElement(Element hit, Offset touch) {
   final tracking = _isTracking();
+  // One delegate for the whole walk.
+  final delegate = InspectorSerializationDelegate(
+    service: WidgetInspectorService.instance,
+    subtreeDepth: 0,
+    includeProperties: false,
+  );
   final chain = <FixFrame>[];
   final elements = <Element>[];
   ({String name, FixFrame frame, int chainIndex})? named;
@@ -265,7 +271,7 @@ FixInspection inspectElement(Element hit, Offset touch) {
     walked++;
     final widget = element.widget;
     if (widget is FixKitChrome) return;
-    final location = _creationLocation(element);
+    final location = tracking ? _creationLocation(element, delegate) : null;
     final frame = FixFrame(
       widget: _typeName(widget),
       file: location?.file,
@@ -377,13 +383,8 @@ bool _isTracking() {
 /// The place [element]'s widget was constructed, from the same data the
 /// Flutter inspector shows. Only available in debug builds with widget creation
 /// tracking, which `flutter run` turns on by default.
-({String file, int line, int column})? _creationLocation(Element element) {
+({String file, int line, int column})? _creationLocation(Element element, InspectorSerializationDelegate delegate) {
   try {
-    final delegate = InspectorSerializationDelegate(
-      service: WidgetInspectorService.instance,
-      subtreeDepth: 0,
-      includeProperties: false,
-    );
     final json = element.toDiagnosticsNode().toJsonMap(delegate);
     final location = json['creationLocation'];
     if (location is! Map) return null;

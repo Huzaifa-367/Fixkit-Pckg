@@ -131,7 +131,17 @@ class IoFixConnection implements FixConnection {
       _call('POST', '/report', body: body, timeout: const Duration(seconds: 15));
 
   @override
-  Future<Map<String, Object?>> status(String id) => _call('GET', '/status', query: {'id': id});
+  Future<Map<String, Object?>> status(String id, {int? since}) => since == null
+      ? _call('GET', '/status', query: {'id': id})
+      : _call(
+          'GET',
+          '/status',
+          query: {'id': id, 'since': '$since', 'wait': '$statusWaitSeconds'},
+          timeout: const Duration(seconds: statusWaitSeconds + 6),
+        );
+
+  /// How long the hub may hold a status request.
+  static const int statusWaitSeconds = 20;
 
   @override
   Future<Map<String, Object?>?> presence({String? file}) async {
