@@ -1263,17 +1263,31 @@ Future<void> runHub({int port = fixkitPort, bool foreground = false}) async {
     if (foreground) stderr.writeln(line);
   }
 
-  final hub = FixHub(port: port, log: log);
-  try {
-    await hub.start();
-  } on SocketException catch (error) {
-    log('could not listen on port $port: ${error.message}');
-    await sink.flush();
-    await sink.close();
-    exitCode = 1;
-    return;
-  }
-  await hub.done;
+  // Anything that goes wrong is written to the log: a detached hub has no
+  // terminal, and "did not start" alone helps nobody.
+  final finished = Completer<void>();
+  runZonedGuarded(() async {
+    final hub = FixHub(port: port, log: log);
+    try {
+      await hub.start();
+    } on SocketException catch (error) {
+      log('could not listen on port $port: ${error.message}${error.osError == null ? '' : ' (${error.osError})'}');
+      exitCode = 1;
+      if (!finished.isCompleted) finished.complete();
+      return;
+    } catch (error, stack) {
+      log('could not start: $error\n$stack');
+      exitCode = 1;
+      if (!finished.isCompleted) finished.complete();
+      return;
+    }
+    await hub.done;
+    if (!finished.isCompleted) finished.complete();
+  }, (error, stack) {
+    // Keep serving: one failed request or timer must not take the hub down.
+    log('error: $error\n$stack');
+  });
+  await finished.future;
   await sink.flush();
   await sink.close();
 }

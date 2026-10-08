@@ -63,13 +63,38 @@ class HubClient {
       );
     }
 
+    final logStart = _logLength();
     await spawnHub();
-    for (var i = 0; i < 100; i++) {
+    // Started from source, the hub compiles first: give it a while.
+    for (var i = 0; i < 200; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 150));
       hello = await this.hello();
       if (hello != null) return hello;
     }
-    throw HubException('The fixkit hub did not start. See ${hubLogFile().path}.');
+    final why = _logSince(logStart);
+    throw HubException(
+      'The fixkit hub did not start.${why.isEmpty ? '' : ' It said:\n$why\n'} Full log: ${hubLogFile().path}',
+    );
+  }
+
+  int _logLength() {
+    try {
+      return hubLogFile().lengthSync();
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// The last lines the hub wrote since [start].
+  String _logSince(int start) {
+    try {
+      final text = hubLogFile().readAsStringSync();
+      final fresh = start < text.length ? text.substring(start) : '';
+      final lines = fresh.trim().split('\n').where((line) => line.trim().isNotEmpty).toList();
+      return lines.skip(lines.length > 12 ? lines.length - 12 : 0).map((line) => '    $line').join('\n');
+    } catch (_) {
+      return '';
+    }
   }
 
   Future<bool> _portTakenByOther() async {
@@ -96,13 +121,32 @@ class HubClient {
       'hub',
       '--port=$port',
     ];
-    await Process.start(
-      Platform.resolvedExecutable,
-      arguments,
-      mode: ProcessStartMode.detached,
-      workingDirectory: homeDirectory(),
-    );
+    // Through a shell, so what the hub prints before it can log (a compile
+    // error, a crash) lands in hub.log too.
+    final log = hubLogFile();
+    try {
+      log.parent.createSync(recursive: true);
+    } catch (_) {}
+    if (Platform.isWindows) {
+      final command = [Platform.resolvedExecutable, ...arguments].map(_quoteWindows).join(' ');
+      await Process.start(
+        'cmd',
+        ['/c', '$command >> ${_quoteWindows(log.path)} 2>&1'],
+        mode: ProcessStartMode.detached,
+        workingDirectory: homeDirectory(),
+      );
+    } else {
+      await Process.start(
+        '/bin/sh',
+        ['-c', 'exec "\$@" >> "\$FIXKIT_HUB_LOG" 2>&1', 'fixkit-hub', Platform.resolvedExecutable, ...arguments],
+        mode: ProcessStartMode.detached,
+        workingDirectory: homeDirectory(),
+        environment: {'FIXKIT_HUB_LOG': log.path},
+      );
+    }
   }
+
+  static String _quoteWindows(String value) => value.contains(' ') ? '"$value"' : value;
 
   /// One request. Returns the decoded body, or null for 204 No Content.
   Future<Map<String, Object?>?> call(
