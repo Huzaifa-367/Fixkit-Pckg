@@ -7,6 +7,7 @@ import '../protocol.dart';
 import 'host_tools.dart';
 import 'paths.dart';
 import 'report.dart';
+import 'vm_reload.dart';
 
 /// An agent's MCP server, registered with the hub.
 class AgentSession {
@@ -50,6 +51,21 @@ class AgentSession {
       };
 }
 
+/// A running app's Flutter session, as the app described it: where its Dart
+/// Development Service listens on this computer, and its main isolate.
+class AppSession {
+  AppSession(this.service, this.isolateId);
+
+  final Uri service;
+  final String? isolateId;
+  DateTime seen = DateTime.now();
+
+  Map<String, Object?> toJson() => {'service': service.toString(), 'seen': seen.toIso8601String()};
+}
+
+/// What [FixHub] did to hot reload an app.
+typedef ReloadResult = ({String? via, bool reloaded, String? error});
+
 /// A `fixkit run` process: it can hot reload one project's app.
 class RunnerSession {
   RunnerSession(this.project);
@@ -78,8 +94,11 @@ class FixHub {
     this.reloadWait = const Duration(seconds: 10),
     this.adbInterval = const Duration(seconds: 3),
     this.staleAfter = const Duration(minutes: 15),
+    this.autoReloadDelay = const Duration(milliseconds: 1200),
+    FlutterReloader? reloader,
     Log? log,
   })  : settings = settings ?? FixkitSettings.load(),
+        reloader = reloader ?? const DdsReloader(),
         _log = log ?? ((_) {}),
         tools = tools ?? HostTools(log: log);
 
@@ -94,6 +113,18 @@ class FixHub {
 
   /// How long a report may sit with an agent that does nothing.
   final Duration staleAfter;
+
+  /// How long the agent's edits must pause before the hub hot reloads the
+  /// app by itself (when `autoReload` is on).
+  final Duration autoReloadDelay;
+  final FlutterReloader reloader;
+
+  /// Apps' Flutter sessions by project root; [_lastApp] is the newest of any.
+  final Map<String, AppSession> appSessions = {};
+  AppSession? _lastApp;
+  /// Reloads in flight by project, with when each started.
+  final Map<String, ({Future<ReloadResult> future, DateTime started})> _reloading = {};
+  final Map<String, Timer> _autoReloadTimers = {};
   final Log _log;
 
   final List<HttpServer> _servers = [];
@@ -159,6 +190,10 @@ class FixHub {
 
   Future<void> close() async {
     _closing = true;
+    for (final timer in _autoReloadTimers.values) {
+      timer.cancel();
+    }
+    _autoReloadTimers.clear();
     _housekeeping?.cancel();
     _adbTimer?.cancel();
     _editTimer?.cancel();
@@ -209,7 +244,7 @@ class FixHub {
         'pid': pid,
         'lan': settings.lan,
         // What this hub can do; an app finding less knows the hub is old.
-        'features': const ['activity', 'presence', 'progress', 'selection', 'live-status'],
+        'features': const ['activity', 'presence', 'progress', 'selection', 'live-status', 'flutter-reload'],
       });
     }
 
@@ -312,6 +347,7 @@ class FixHub {
       finder: _finder,
     );
     report.projectRoot ??= _soleProject();
+    _rememberApp(body['flutterSession'], project: report.projectRoot);
     _saveFiles(report, body['screenshotPNG']);
     reports[id] = report;
     _trimReports();
@@ -344,6 +380,7 @@ class FixHub {
     final body = await _json(request);
     final kind = '${body['kind'] ?? 'reload'}';
     final now = DateTime.now();
+    _rememberApp(body['flutterSession']);
 
     for (final report in reports.values) {
       switch (report.status) {
@@ -351,10 +388,18 @@ class FixHub {
           report.sawReload = true;
           report.lastReloadAt = now;
           _checkEdits(report);
-          report.note('Hot reloaded');
+          report.note(kind == 'launch' ? 'App restarted' : 'Hot reloaded');
         case FixStatus.reloading:
           report.lastReloadAt = now;
-          report.setStatus(FixStatus.live, keepMessage: true);
+          report.sawReload = true;
+          if (report.reloadWaiter != null) {
+            // The agent has finished (complete_fix waits for this reload).
+            report.setStatus(FixStatus.live, keepMessage: true);
+          } else {
+            // A reload in the middle of the fix: the agent is still at it.
+            report.setStatus(FixStatus.fixing, keepMessage: true);
+            report.note(kind == 'launch' ? 'App restarted' : 'Hot reloaded');
+          }
         case FixStatus.applied:
           report.lastReloadAt = now;
           report.setStatus(FixStatus.live, keepMessage: true);
@@ -559,20 +604,39 @@ class FixHub {
         report.note('Waiting for your answer in ${report.agentName ?? 'the agent chat'}', kind: 'question');
       default:
         final completedAt = DateTime.now();
-        final hadReload = report.sawReload;
         _checkEdits(report);
+        _autoReloadTimers.remove(report.projectRoot ?? '')?.cancel();
+        // A reload after the last edit already put the fix on screen.
+        final hadReload = report.sawReload && report.reloadedSinceEdit;
         report.setStatus(FixStatus.reloading, message: message);
         if (!hadReload) report.note('Hot reloading');
         final waiter = Completer<void>();
         report.reloadWaiter = waiter;
-        // A reload that already happened during the fix usually carried the
-        // last edit (hot reload on save); give a newer one a moment anyway.
+        // Without a reload since the last edit, fixkit reloads the app itself
+        // (through `fixkit run` or the app's Flutter session), so the fix
+        // reaches the screen even when the agent did not reload.
+        final triggered = hadReload ? null : _reloadApp(report.projectRoot, mark: false);
+        final ended = Completer<void>();
+        unawaited(waiter.future.then((_) {
+          if (!ended.isCompleted) ended.complete();
+        }));
+        String? reloadError;
+        unawaited(triggered?.then((result) {
+          if (result.error != null) {
+            reloadError = result.error;
+            if (!ended.isCompleted) ended.complete();
+          }
+        }));
+        // Give a newer reload a moment anyway.
         final wait = hadReload ? const Duration(milliseconds: 2500) : reloadWait;
-        await waiter.future.timeout(wait, onTimeout: () {});
+        await ended.future.timeout(wait, onTimeout: () {});
         report.reloadWaiter = null;
         final reloaded = report.lastReloadAt != null && !report.lastReloadAt!.isBefore(completedAt);
         if (report.status == FixStatus.reloading) {
           report.setStatus(reloaded || hadReload ? FixStatus.live : FixStatus.applied, message: message);
+        }
+        if (reloadError != null && report.status != FixStatus.live) {
+          report.note('Hot reload failed: ${_short(reloadError!)}', kind: 'error');
         }
         report.note(
           report.status == FixStatus.live ? 'Fix is on screen' : 'Fixed in code: hot reload to see it',
@@ -583,38 +647,146 @@ class FixHub {
     _reply(request, HttpStatus.ok, report.statusJson());
   }
 
-  /// Hot reloads the project's app through its `fixkit run`, when there is
-  /// one, and waits for the app to confirm.
+  /// Hot reloads the project's app (see [_reloadApp]) and waits for the app
+  /// to confirm.
   Future<void> _reload(HttpRequest request) async {
     final body = await _json(request);
     final project = body['project'] is String ? normalizePath(body['project'] as String) : null;
+    final result = await _reloadApp(project);
+    _reply(request, HttpStatus.ok, {
+      'runner': result.via == 'fixkit run',
+      'via': result.via,
+      'reloaded': result.reloaded,
+      if (result.error != null) 'error': result.error,
+    });
+  }
+
+  /// Hot reloads the app of [project], through the first that works:
+  /// - its `dart run fixkit run`, which sends flutter the reload key;
+  /// - the Flutter session it was started with (any editor or terminal):
+  ///   the hub calls the Flutter tool's `reloadSources` service, as the
+  ///   editor's reload button does.
+  ///
+  /// Waits for the app's reload signal. [mark] notes "Hot reloading" on the
+  /// project's reports in progress (complete_fix notes it itself). Reloads
+  /// that overlap share one.
+  Future<ReloadResult> _reloadApp(String? project, {bool mark = true}) {
     final runner = _runnerFor(project);
-    if (runner == null) {
-      return _reply(request, HttpStatus.ok, {'runner': false, 'reloaded': false});
+    final app = runner == null ? _appFor(project) : null;
+    if (runner == null && app == null) {
+      return Future.value((via: null, reloaded: false, error: null));
     }
-    final waiter = Completer<void>();
-    _reloadWaiters.add(waiter);
-    for (final active in reports.values) {
-      if (active.status == FixStatus.fixing) {
-        _checkEdits(active);
-        active.setStatus(FixStatus.reloading, keepMessage: true);
-        active.note('Hot reloading');
-      }
+    final key = project ?? '';
+    final current = _reloading[key];
+    if (current != null) {
+      // Join the reload in flight, unless the agent edited since it began:
+      // then reload again once it is done, so the last edit is on screen.
+      final editedSince = reports.values.any((report) =>
+          (project == null || report.projectRoot == project) &&
+          report.lastEditAt != null &&
+          report.lastEditAt!.isAfter(current.started));
+      return editedSince ? current.future.then((_) => _reloadApp(project, mark: mark)) : current.future;
     }
-    _sendToRunner(runner, 'reload');
-    await waiter.future.timeout(reloadWait, onTimeout: () {});
-    _reloadWaiters.remove(waiter);
-    final reloaded = waiter.isCompleted;
-    // Reports marked reloading go back to fixing if no reload came, unless an
-    // agent is finishing them.
-    if (!reloaded) {
-      for (final active in reports.values) {
-        if (active.status == FixStatus.reloading && active.reloadWaiter == null) {
-          active.setStatus(FixStatus.fixing, keepMessage: true);
+    final via = runner != null ? 'fixkit run' : 'flutter';
+    final Future<ReloadResult> future = () async {
+      final waiter = Completer<void>();
+      _reloadWaiters.add(waiter);
+      final marked = <FixReport>[];
+      if (mark) {
+        for (final active in reports.values) {
+          if (active.status == FixStatus.fixing && (project == null || active.projectRoot == null || active.projectRoot == project)) {
+            _checkEdits(active);
+            active.setStatus(FixStatus.reloading, keepMessage: true);
+            active.note('Hot reloading');
+            marked.add(active);
+          }
         }
       }
-    }
-    _reply(request, HttpStatus.ok, {'runner': true, 'reloaded': reloaded});
+      String? error;
+      if (runner != null) {
+        _sendToRunner(runner, 'reload');
+      } else {
+        var session = app!;
+        _log('hot reload through the Flutter session at ${session.service.authority}');
+        var outcome = await reloader.reload(session.service, isolateId: session.isolateId);
+        final newest = _lastApp;
+        if (outcome.unreachable && newest != null && newest != session) {
+          // The app restarted since this session was noted: try its newest.
+          session = newest;
+          outcome = await reloader.reload(session.service, isolateId: session.isolateId);
+        }
+        if (outcome.unreachable && project != null && appSessions[project] == session) {
+          appSessions.remove(project);
+        } else if (outcome.ok && project != null) {
+          appSessions[project] = session;
+        }
+        error = outcome.error;
+        if (error != null) _log('hot reload failed: $error');
+      }
+      if (error == null) await waiter.future.timeout(reloadWait, onTimeout: () {});
+      _reloadWaiters.remove(waiter);
+      final reloaded = waiter.isCompleted;
+      // Reports marked reloading go back to fixing if no reload came.
+      for (final active in marked) {
+        if (active.status == FixStatus.reloading && active.reloadWaiter == null) {
+          active.setStatus(FixStatus.fixing, keepMessage: true);
+          if (error != null) active.note('Hot reload failed: ${_short(error)}', kind: 'error');
+        }
+      }
+      return (via: via, reloaded: reloaded, error: reloaded ? null : (error ?? 'the app did not confirm the reload'));
+    }();
+    _reloading[key] = (future: future, started: DateTime.now());
+    unawaited(future.whenComplete(() {
+      if (identical(_reloading[key]?.future, future)) _reloading.remove(key);
+    }));
+    return future;
+  }
+
+  /// Remembers how to reach an app's Flutter session. Only addresses on this
+  /// computer are kept: the hub never connects elsewhere on an app's word.
+  void _rememberApp(Object? session, {String? project}) {
+    if (session is! Map) return;
+    final service = Uri.tryParse('${session['dds'] ?? ''}');
+    if (service == null || !const {'ws', 'wss', 'http'}.contains(service.scheme)) return;
+    if (!const {'127.0.0.1', 'localhost', '::1'}.contains(service.host)) return;
+    // DDS addresses look like /<code>=/ (or / without auth codes).
+    if (!RegExp(r'^/([A-Za-z0-9_\-=]+/)?(ws)?$').hasMatch(service.path)) return;
+    final isolate = session['isolate'];
+    final app = AppSession(service, isolate is String ? isolate : null);
+    _lastApp = app;
+    // A launch says nothing about the project: it is the sole open one, or
+    // the same app as the only session known so far (restarted).
+    final key = project ?? _soleProject() ?? (appSessions.length == 1 ? appSessions.keys.single : null);
+    if (key != null) appSessions[key] = app;
+  }
+
+  /// The project's app session; else the newest one, when it is the only
+  /// app fixkit has heard from recently.
+  AppSession? _appFor(String? project) {
+    final mine = project == null ? null : appSessions[project];
+    if (mine != null) return mine;
+    final last = _lastApp;
+    if (last == null) return null;
+    final others = appSessions.values.where((app) => app.service != last.service).toList();
+    return others.isEmpty ? last : null;
+  }
+
+  /// After the agent's edits pause, hot reload the app so each change shows
+  /// as it is made, even when the agent never reloads.
+  void _scheduleAutoReload(FixReport report) {
+    if (!settings.autoReload || _closing) return;
+    final key = report.projectRoot ?? '';
+    _autoReloadTimers.remove(key)?.cancel();
+    _autoReloadTimers[key] = Timer(autoReloadDelay, () {
+      _autoReloadTimers.remove(key);
+      if (_closing || report.status != FixStatus.fixing || report.reloadedSinceEdit) return;
+      unawaited(_reloadApp(report.projectRoot));
+    });
+  }
+
+  static String _short(String text) {
+    final line = text.split('\n').first.trim();
+    return line.length > 70 ? '${line.substring(0, 67)}...' : line;
   }
 
   // ---- Runner endpoints ------------------------------------------------------
@@ -833,6 +1005,12 @@ class FixHub {
   }
 
   void _noteEdit(FixReport report, String file) {
+    // The file's own time: an edit found late (by the poll, after a reload)
+    // must not look newer than that reload.
+    final at = _modified(file) ?? DateTime.now();
+    final last = report.lastEditAt;
+    if (last == null || at.isAfter(last)) report.lastEditAt = at;
+    _scheduleAutoReload(report);
     final path = _canonical(file);
     if (!report.edited.add(path)) return;
     report.note('Edited ${path.split('/').last}');
@@ -965,6 +1143,7 @@ class FixHub {
         if (settings.lan) 'lanAddress': _lanAddress,
         'agents': [for (final agent in agents.values) agent.toJson()],
         'runners': [for (final runner in runners.values) runner.toJson()],
+        'apps': {for (final entry in appSessions.entries) entry.key: entry.value.toJson()},
         'reports': [for (final report in reports.values) report.summary()],
         'android': tools.reversedDevices.toList(),
         'adb': tools.findAdb(),

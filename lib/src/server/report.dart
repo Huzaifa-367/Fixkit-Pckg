@@ -157,6 +157,18 @@ class FixReport {
   bool sawReload = false;
   DateTime? lastReloadAt;
 
+  /// When the hub last saw the agent change a file in the project.
+  DateTime? lastEditAt;
+
+  /// Whether the app has reloaded since the agent's last edit (as far as the
+  /// hub can tell).
+  bool get reloadedSinceEdit {
+    final reload = lastReloadAt;
+    if (reload == null) return false;
+    final edit = lastEditAt;
+    return edit == null || !reload.isBefore(edit);
+  }
+
   /// The prompt was copied to the clipboard because no agent took it.
   bool copiedToClipboard = false;
 

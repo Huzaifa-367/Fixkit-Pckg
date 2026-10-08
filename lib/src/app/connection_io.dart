@@ -4,6 +4,7 @@ import 'dart:io';
 
 import '../protocol.dart';
 import 'connection.dart';
+import 'flutter_session_io.dart';
 
 /// Set by `dart run fixkit run --lan` (or `.fixkit/defines.json`) for phones
 /// that reach the computer over Wi-Fi: `192.168.1.20:4747`.
@@ -32,6 +33,30 @@ class IoFixConnection implements FixConnection {
 
   Uri? _base;
   Future<Uri?>? _resolving;
+
+  /// Where the hub can hot reload this app (see [findFlutterSession]). Kept
+  /// once found; until then looked up again at most every 15 seconds, since
+  /// the Flutter tool's DDS may take over after the app's first frame.
+  Map<String, Object?>? _session;
+  Future<Map<String, Object?>?>? _lookingUp;
+  DateTime? _lookedUpAt;
+
+  Future<Map<String, Object?>?> _flutterSession() async {
+    final found = _session;
+    if (found != null) return found;
+    final last = _lookedUpAt;
+    if (_lookingUp == null && (last == null || DateTime.now().difference(last) > const Duration(seconds: 15))) {
+      _lookedUpAt = DateTime.now();
+      _lookingUp = findFlutterSession().then((session) {
+        _session = session;
+        _lookingUp = null;
+        return session;
+      });
+    }
+    final looking = _lookingUp;
+    if (looking == null) return null;
+    return looking.timeout(const Duration(seconds: 4), onTimeout: () => null);
+  }
 
   List<Uri> get candidates {
     final explicit = _explicit;
@@ -127,8 +152,15 @@ class IoFixConnection implements FixConnection {
   }
 
   @override
-  Future<Map<String, Object?>> report(Map<String, Object?> body) =>
-      _call('POST', '/report', body: body, timeout: const Duration(seconds: 15));
+  Future<Map<String, Object?>> report(Map<String, Object?> body) async {
+    final session = await _flutterSession();
+    return _call(
+      'POST',
+      '/report',
+      body: {...body, if (session != null) 'flutterSession': session},
+      timeout: const Duration(seconds: 15),
+    );
+  }
 
   @override
   Future<Map<String, Object?>> status(String id, {int? since}) => since == null
@@ -186,7 +218,13 @@ class IoFixConnection implements FixConnection {
   @override
   Future<Map<String, Object?>?> signal(String kind) async {
     try {
-      return await _call('POST', '/signal', body: {'kind': kind, 'protocol': fixkitProtocol, 'version': fixkitVersion});
+      final session = await _flutterSession();
+      return await _call('POST', '/signal', body: {
+        'kind': kind,
+        'protocol': fixkitProtocol,
+        'version': fixkitVersion,
+        if (session != null) 'flutterSession': session,
+      });
     } catch (_) {
       return null;
     }

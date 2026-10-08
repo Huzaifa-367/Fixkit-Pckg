@@ -89,7 +89,7 @@ String lanToken() {
 
 /// Computer-wide settings in `~/.fixkit/config.json`.
 class FixkitSettings {
-  const FixkitSettings({this.lan = false, this.clipboard = true, this.notifications = true});
+  const FixkitSettings({this.lan = false, this.clipboard = true, this.notifications = true, this.autoReload = true});
 
   /// Listen on the network for phones on Wi-Fi (they need the token).
   final bool lan;
@@ -99,6 +99,10 @@ class FixkitSettings {
 
   /// Show a desktop notification when no agent picks a report up.
   final bool notifications;
+
+  /// Hot reload the app whenever the agent's edits pause, so changes show as
+  /// they are made. complete_fix reloads regardless.
+  final bool autoReload;
 
   static File get file => File(joinPath(fixkitHome().path, 'config.json'));
 
@@ -110,6 +114,7 @@ class FixkitSettings {
         lan: json['lan'] == true,
         clipboard: json['clipboard'] != false,
         notifications: json['notifications'] != false,
+        autoReload: json['autoReload'] != false,
       );
     } catch (_) {
       return const FixkitSettings();
@@ -121,13 +126,15 @@ class FixkitSettings {
       'lan': lan,
       'clipboard': clipboard,
       'notifications': notifications,
+      'autoReload': autoReload,
     }));
   }
 
-  FixkitSettings copyWith({bool? lan, bool? clipboard, bool? notifications}) => FixkitSettings(
+  FixkitSettings copyWith({bool? lan, bool? clipboard, bool? notifications, bool? autoReload}) => FixkitSettings(
         lan: lan ?? this.lan,
         clipboard: clipboard ?? this.clipboard,
         notifications: notifications ?? this.notifications,
+        autoReload: autoReload ?? this.autoReload,
       );
 }
 

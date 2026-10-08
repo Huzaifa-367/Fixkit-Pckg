@@ -170,7 +170,7 @@ void main() {
   test('hot_reload explains the alternatives without a runner', () async {
     await initialize();
     final result = (await editor.request('tools/call', {'name': 'hot_reload', 'arguments': {}}))['result'] as Map;
-    expect('${((result['content'] as List).single as Map)['text']}', contains('fixkit run'));
+    expect('${((result['content'] as List).single as Map)['text']}', contains('Flutter session'));
   });
 
   test('uses the workspace roots the editor lists', () async {

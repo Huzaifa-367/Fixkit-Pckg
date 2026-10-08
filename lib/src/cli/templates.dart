@@ -29,8 +29,9 @@ When asked to "watch for fixes" (or `/fixkit`), call the fixkit MCP tool
   widened the selection (to a Row, Column or card), change that widget.
 - Make the smallest change that does what was asked. Do not refactor. The
   app shows your progress live; `fix_progress` adds a note for longer fixes.
-- Hot reload with fixkit's `hot_reload` tool (or the Dart MCP server's), then
-  call `complete_fix` with a one-sentence summary, then wait again.
+- Hot reload with fixkit's `hot_reload` tool: it reloads the app through
+  the Flutter session it runs in, from any editor. Then call `complete_fix`
+  with a one-sentence summary (it reloads too if needed), then wait again.
 $agentsEnd
 ''';
 

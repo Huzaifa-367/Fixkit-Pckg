@@ -148,6 +148,15 @@ Future<int> runStatus(List<String> arguments, Console console) async {
     }
   }
 
+  final apps = state?['apps'] is Map ? state!['apps'] as Map : const {};
+  if (apps.isNotEmpty) {
+    console.line();
+    console.line(console.bold('Agent hot reload'));
+    for (final entry in apps.entries) {
+      console.line('  ${entry.key}  ${console.green('through the app\'s Flutter session')}');
+    }
+  }
+
   final android = state?['android'] as List? ?? const [];
   if (android.isNotEmpty) {
     console.line();

@@ -185,11 +185,16 @@ With `--lan`:
 
 ## Hot reload
 
-fixkit needs the change on screen to call a report *fixed*. Whatever triggers the reload, the app's own reload signal confirms it. Three things can trigger it:
+fixkit puts the agent's change on screen by itself. You don't need to press hot reload, and the app can run however you like: the Run button in VS Code, Cursor, Antigravity or Windsurf, Android Studio, or `flutter run` in a terminal.
 
-- **Hot reload on save.** When the app runs from VS Code, Cursor, Antigravity or Windsurf, the agent's edit reloads it; `init` turns this on.
-- **The Dart MCP server's `hot_reload` tool.** `init` adds the server where it is missing.
-- **`dart run fixkit run`**, a drop-in for `flutter run` that lets fixkit's own `hot_reload` tool reload the app from any agent. Keys, output and options are the same as `flutter run`.
+- **How.** Every `flutter run` starts a Dart Development Service on your computer, and the Flutter tool registers its hot reload there. At launch the app looks up where that service is (from its own VM service) and tells the hub. The hub then asks the Flutter tool to hot reload, exactly as the editor's reload button does, so the editor's session, debug console and compiler stay in step.
+- **When.**
+  - When the agent calls fixkit's `hot_reload` tool.
+  - When the agent's edits pause for a moment, so each change shows as it is made. Set `"autoReload": false` in `~/.fixkit/config.json` to turn this off.
+  - When the agent calls `complete_fix` and the app hasn't reloaded since its last edit.
+- **Confirmation.** The app's own reload signal (`State.reassemble`) confirms each reload, whatever triggered it. A compile error comes back to the agent, which fixes it and reloads again.
+
+`dart run fixkit run` (a drop-in for `flutter run`) still works as another way in. Hot reload on save and the Dart MCP server's `hot_reload` tool also still count.
 
 ## Commands
 
@@ -274,6 +279,8 @@ The badge at the start of the suggestions row says what the app sees:
 | **No agent** | No editor has fixkit loaded | Open the project in your editor and reload the window once; `dart run fixkit status` lists connected agents |
 | **fixkit offline** | The app cannot reach the hub | `dart run fixkit doctor`. Physical Android phones need adb (the hub runs `adb reverse` by itself); iPhones need `init --lan` |
 | **Updating fixkit** | A hub from an older fixkit was running | The app asks it to stop, and your editor starts the current one within seconds. If it persists, run `dart run fixkit restart` |
+
+If the agent's changes don't reload by themselves, restart the app once (not just hot reload it): the app tells the hub how to reach its Flutter session at launch. `dart run fixkit status` lists the apps the hub can reload under **Agent hot reload**.
 
 Hot reload or restart the app after upgrading fixkit, and reload the editor window, so all three parts run the same version. `dart run fixkit doctor` checks for that too.
 

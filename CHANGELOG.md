@@ -4,6 +4,14 @@ All notable changes to fixkit. The format follows [Keep a Changelog](https://kee
 
 ## Unreleased
 
+### Fixed
+- **The agent's changes now hot reload by themselves.** Before, the app only reloaded when the editor saw a save, so when an agent wrote the files itself you had to press hot reload. Now the app finds its Flutter session at launch and tells the hub, and the hub asks the Flutter tool to hot reload, as the editor's reload button does. This works whether the app was started from VS Code, Cursor, Antigravity, Windsurf, Android Studio or `flutter run`, on any device.
+  - fixkit's `hot_reload` tool reloads through it.
+  - The hub also reloads when the agent's edits pause (`autoReload` in `~/.fixkit/config.json`, on by default).
+  - `complete_fix` reloads if nothing has since the last edit.
+  - A compile error goes back to the agent and shows on the card.
+- **A reload during a fix no longer ends it.** A reload in the middle of a fix used to mark it as done before the agent had finished, and the card stopped following. Only `complete_fix` finishes it now.
+
 ## 0.1.1
 
 ### Added

@@ -21,7 +21,7 @@ When the person says "watch for fixes", "fixkit" or "/fixkit", or asks you to ha
 3. Start at the first file:line of the widget path: the selected widget is constructed there, and the lines after it are its parents. Usually that is the widget under the finger; when the report says the person widened the selection (to a Row, a Column, a card), the request is about that whole widget. Text built from data (amounts, dates) is easier to find through the fixed text near it.
 4. Make the smallest change that does what was asked. Do not refactor or reformat. The app shows the person your progress live (it notices your edits by itself); for a longer fix you may also call fix_progress with a few words, like "Fixing the colour test".
 5. Open the screenshot only when the words and the code leave the request unclear.
-6. Put the change on screen: call hot_reload. If it says fixkit cannot reload this app, use a hot_reload tool from the Dart/Flutter MCP server if you have one; otherwise hot reload on save does it.
+6. Put the change on screen: call hot_reload. fixkit reloads the app through the Flutter session it runs in (from any editor or terminal), and complete_fix reloads it too if needed. Only if hot_reload says it cannot reach the app, use a hot_reload tool from the Dart/Flutter MCP server if you have one. If it reports a compile error, fix it and call hot_reload again.
 7. Call complete_fix with the report id, the outcome and a one-sentence summary; the person sees the summary in the app. To ask a question instead, use the outcome needs_input and ask in the chat.
 8. Call wait_for_fix_report again.''';
 
@@ -515,19 +515,22 @@ class FixkitMcpServer {
       'POST',
       '/agent/reload',
       body: {'project': project},
-      timeout: const Duration(seconds: 20),
+      timeout: const Duration(seconds: 90),
     );
-    if (answer?['runner'] != true) {
+    final via = answer?['via'] is String ? answer!['via'] as String : (answer?['runner'] == true ? 'fixkit run' : null);
+    final how = via == 'fixkit run' ? '`fixkit run`' : 'the app\'s Flutter session';
+    if (answer?['reloaded'] == true) return _text('Hot reloaded through $how: the app confirmed the reload.');
+    if (via == null) {
       return _text(
-        'This app was not started with `dart run fixkit run`, so fixkit cannot reload it itself. '
-        'Use a hot_reload tool from the Dart/Flutter MCP server if you have one; otherwise saving the edited files '
-        'hot reloads an app run from VS Code, Cursor or Antigravity. fixkit notices the reload by itself.',
+        'fixkit has not heard from the app\'s Flutter session yet, so it cannot reload it. Restart the app once '
+        '(it tells fixkit how to reach its session at launch), or run it with `dart run fixkit run`. Meanwhile use a '
+        'hot_reload tool from the Dart/Flutter MCP server if you have one; complete_fix still notices any reload by itself.',
       );
     }
-    if (answer?['reloaded'] == true) return _text('Hot reloaded: the app confirmed the reload.');
-    return _text(
-      'Asked `fixkit run` to hot reload, but the app did not confirm within 10 seconds. '
-      'The terminal running it may show a compile error.',
+    final error = answer?['error'] is String ? answer!['error'] as String : 'the app did not confirm the reload';
+    return _toolError(
+      'Hot reload through $how failed: $error. If it is a compile error, fix the code and call hot_reload again; '
+      'the editor\'s debug console (or the terminal running the app) shows the details.',
     );
   }
 
