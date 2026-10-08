@@ -7,7 +7,7 @@ const int fixkitProtocol = 1;
 
 /// The package version. Kept equal to `version:` in pubspec.yaml by
 /// `dart run tool/release.dart`, and checked by test/version_test.dart.
-const String fixkitVersion = '0.1.4';
+const String fixkitVersion = '0.1.5';
 
 /// Where fixkit's source and releases live; `fixkit upgrade` reads its tags
 /// for projects that depend on fixkit through git.

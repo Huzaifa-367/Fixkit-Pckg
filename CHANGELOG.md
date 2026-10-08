@@ -4,6 +4,8 @@ All notable changes to fixkit. The format follows [Keep a Changelog](https://kee
 
 ## Unreleased
 
+## 0.1.5
+
 ### Added
 - **`doctor` shows the whole hot reload chain** in one place:
   - which fixkit the editor's MCP server, the hub and the running app each use, and which needs reloading or restarting;
