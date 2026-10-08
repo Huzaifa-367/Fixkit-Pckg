@@ -26,6 +26,9 @@ class FakeConnection implements FixConnection {
   String get description => 'fake';
 
   @override
+  ({String label, String hint}) get offlineAdvice => (label: 'fixkit offline', hint: 'Run `dart run fixkit doctor`.');
+
+  @override
   Future<Map<String, Object?>> report(Map<String, Object?> body) async {
     reports.add(body);
     return answer;
@@ -214,8 +217,9 @@ void main() {
     await badge(FakeConnection(presenceAnswer: const {'agent': null}), 'No agent');
 
     final outdated = FakeConnection(presenceAnswer: const {'outdated': true, 'version': '0.1.0'});
-    await badge(outdated, 'Updating fixkit');
-    expect(outdated.restarts, 1);
+    await badge(outdated, 'Update fixkit');
+    // It is left running: an older editor would not start a new one.
+    expect(outdated.restarts, 0);
   });
 
   testWidgets('an older hub that sends no steps still gets status steps', (tester) async {

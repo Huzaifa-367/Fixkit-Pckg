@@ -78,26 +78,31 @@ class HostTools {
   // ---- adb reverse -------------------------------------------------------
 
   String? _adb;
-  bool _adbSearched = false;
+  DateTime? _adbSearchedAt;
   final Set<String> _reversed = {};
 
   /// Where adb is: on PATH, or in the Android SDK's usual places.
   String? findAdb() {
-    if (_adbSearched) return _adb;
-    _adbSearched = true;
+    // Not found is looked up again after a minute: the SDK may arrive later.
+    final searched = _adbSearchedAt;
+    if (_adb != null || (searched != null && DateTime.now().difference(searched) < const Duration(minutes: 1))) return _adb;
+    _adbSearchedAt = DateTime.now();
     final exe = Platform.isWindows ? 'adb.exe' : 'adb';
     final env = Platform.environment;
     final home = homeDirectory();
+    // The Android SDK's own adb first, the one `flutter run` uses: a
+    // different adb version (an older one on PATH, say) restarts the adb
+    // server on every call, which drops the reverse and disturbs flutter.
     final dirs = <String>[
-      ...?env['PATH']?.split(Platform.isWindows ? ';' : ':'),
+      // The SDK `flutter config --android-sdk` points at.
+      for (final sdk in _flutterAndroidSdks(home, env)) joinPath(sdk, 'platform-tools'),
       for (final key in ['ANDROID_HOME', 'ANDROID_SDK_ROOT'])
         if (env[key] != null) joinPath(env[key]!, 'platform-tools'),
       if (Platform.isMacOS) joinPath(home, 'Library', 'Android', 'sdk', 'platform-tools'),
       if (Platform.isLinux) joinPath(home, 'Android', 'Sdk', 'platform-tools'),
       if (Platform.isWindows && env['LOCALAPPDATA'] != null)
         joinPath(env['LOCALAPPDATA']!, 'Android', 'Sdk', 'platform-tools'),
-      // The SDK `flutter config --android-sdk` points at.
-      for (final sdk in _flutterAndroidSdks(home, env)) joinPath(sdk, 'platform-tools'),
+      ...?env['PATH']?.split(Platform.isWindows ? ';' : ':'),
     ];
     for (final dir in dirs) {
       if (dir.isEmpty) continue;
@@ -121,6 +126,39 @@ class HostTools {
       } catch (_) {
         // Not there.
       }
+    }
+  }
+
+  /// Every device adb lists, with its state: `device` (ready),
+  /// `unauthorized` (the phone has not allowed USB debugging), `offline`...
+  Future<Map<String, String>> adbDeviceStates() async {
+    final adb = findAdb();
+    if (adb == null) return const {};
+    try {
+      final result = await Process.run(adb, ['devices']).timeout(const Duration(seconds: 5));
+      if (result.exitCode != 0) return const {};
+      return {
+        for (final line in LineSplitter.split('${result.stdout}').skip(1))
+          if (line.trim().split(RegExp(r'\s+')).length >= 2)
+            line.trim().split(RegExp(r'\s+'))[0]: line.trim().split(RegExp(r'\s+'))[1],
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Makes 127.0.0.1:[port] on the device [serial] reach this computer, if it
+  /// does not already. True when it does.
+  Future<bool> ensureReverse(String serial, {int port = fixkitPort}) async {
+    final adb = findAdb();
+    if (adb == null) return false;
+    if (await _stillReversed(adb, serial, port)) return true;
+    try {
+      final result = await Process.run(adb, ['-s', serial, 'reverse', 'tcp:$port', 'tcp:$port'])
+          .timeout(const Duration(seconds: 5));
+      return result.exitCode == 0;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -149,7 +187,10 @@ class HostTools {
     final devices = await adbDevices();
     _reversed.removeWhere((serial) => !devices.contains(serial));
     for (final serial in devices) {
-      if (_reversed.contains(serial)) continue;
+      // `flutter run` and IDEs restart the adb server now and then, which
+      // drops every reverse: check it is still there, not just that it was set.
+      if (_reversed.contains(serial) && await _stillReversed(adb, serial, port)) continue;
+      _reversed.remove(serial);
       try {
         final result = await Process.run(adb, ['-s', serial, 'reverse', 'tcp:$port', 'tcp:$port'])
             .timeout(const Duration(seconds: 5));
@@ -162,6 +203,15 @@ class HostTools {
       } catch (error) {
         _log('adb reverse failed on $serial: $error');
       }
+    }
+  }
+
+  Future<bool> _stillReversed(String adb, String serial, int port) async {
+    try {
+      final result = await Process.run(adb, ['-s', serial, 'reverse', '--list']).timeout(const Duration(seconds: 5));
+      return result.exitCode == 0 && '${result.stdout}'.contains('tcp:$port');
+    } catch (_) {
+      return false;
     }
   }
 

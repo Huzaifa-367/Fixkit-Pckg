@@ -279,8 +279,9 @@ The badge at the start of the suggestions row says what the app sees:
 | **Cursor is busy** | It is finishing another fix; yours is next | Send it; it queues |
 | **Cursor is idle** | The editor has fixkit, but the agent is not looping | Say "watch for fixes" in its chat |
 | **No agent** | No editor has fixkit loaded | Open the project in your editor and reload the window once; `dart run fixkit status` lists connected agents |
-| **fixkit offline** | The app cannot reach the hub | `dart run fixkit doctor`. Physical Android phones need adb (the hub runs `adb reverse` by itself); iPhones need `init --lan` |
-| **Updating fixkit** | A hub from an older fixkit was running | The app asks it to stop, and your editor starts the current one within seconds. If it persists, run `dart run fixkit restart` |
+| **fixkit offline** | The app cannot reach the hub. Tap the badge for what to do on this device | Run `dart run fixkit doctor`: it checks the hub and, for Android phones on USB, the `adb reverse` it needs (and sets it). Keep the project open in your editor, which starts the hub |
+| **iPhone: set up Wi-Fi** | A real iPhone reaches the computer over Wi-Fi only, even on a cable | `dart run fixkit init --lan` (on a Mac with Xcode, `init` turns this on by itself), then run the app again from your editor. Same Wi-Fi; allow Local Network |
+| **Update fixkit** | A hub from an older fixkit is running | Reload your editor window (a current editor replaces it), or run `dart run fixkit restart` |
 
 If the agent's changes don't reload by themselves:
 

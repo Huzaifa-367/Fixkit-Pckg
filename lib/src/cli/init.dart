@@ -19,7 +19,12 @@ Future<int> runInit(List<String> arguments, Console console) async {
   final dryRun = arguments.contains('--dry-run');
   // Run by `fixkit upgrade` with the new version: same work, shorter ending.
   final refresh = arguments.contains('--refresh');
-  final lan = arguments.contains('--lan');
+  // Phones on Wi-Fi: asked for, kept on once set, or on by itself on a Mac
+  // with Xcode, since an iPhone (even on a cable) can only reach the
+  // computer over Wi-Fi. `--no-lan` keeps it off.
+  final noLan = arguments.contains('--no-lan');
+  final autoLan = !noLan && !arguments.contains('--lan') && !FixkitSettings.load().lan && developsForIos();
+  final lan = !noLan && (arguments.contains('--lan') || FixkitSettings.load().lan || autoLan);
   final skipMain = arguments.contains('--no-main');
   final skipDart = arguments.contains('--no-dart-mcp');
   final only = _listOption(arguments, 'editors');
@@ -42,6 +47,7 @@ Future<int> runInit(List<String> arguments, Console console) async {
   if (refresh && !dryRun) {
     final changed = refreshProject(project);
     console.ok('Setup', changed.isEmpty ? 'up to date for $fixkitVersion' : 'refreshed ${changed.join(', ')}');
+    if (lan) await _setUpLan(project, console, auto: autoLan);
     await _ensureHub(project, console, lan: lan);
     console.line();
     console.line('  Reload your editor window so it starts the new fixkit MCP server.');
@@ -135,13 +141,15 @@ Future<int> runInit(List<String> arguments, Console console) async {
   console.ok('Agent rules', rules.join(', '));
 
   // 7. Phones on Wi-Fi.
-  if (lan) {
+  if (noLan && !dryRun && FixkitSettings.load().lan) {
+    FixkitSettings.load().copyWith(lan: false).save();
+    console.info('Wi-Fi devices', 'off (--no-lan)');
+  } else if (lan) {
     if (!dryRun) {
-      FixkitSettings.load().copyWith(lan: true).save();
-      await _writeDefines(project);
-      writeLanLaunchConfig(project);
+      await _setUpLan(project, console, auto: autoLan);
+    } else {
+      console.ok('Wi-Fi devices', 'would be turned on');
     }
-    console.ok('Wi-Fi devices', 'on: launches pass the host and token (.fixkit/defines.json)');
   }
 
   // 8. The version this setup was made with; a later fixkit refreshes it.
@@ -177,6 +185,33 @@ Future<int> runInit(List<String> arguments, Console console) async {
   console.line(console.dim('  `dart run fixkit doctor` checks every piece. `dart run fixkit uninstall` undoes this.'));
   console.line();
   return 0;
+}
+
+/// Turns on Wi-Fi devices: the hub listens on the network (devices need the
+/// token), and editor launches pass the host and token to the app.
+Future<void> _setUpLan(Project project, Console console, {required bool auto}) async {
+  FixkitSettings.load().copyWith(lan: true).save();
+  await _writeDefines(project);
+  writeLanLaunchConfig(project);
+  console.ok(
+    'Wi-Fi devices',
+    auto
+        ? 'on, for iPhones (Xcode found; `--no-lan` turns it off): launches pass the host and token'
+        : 'on: launches pass the host and token (.fixkit/defines.json)',
+  );
+  console.hint('A plain `flutter run` needs `--dart-define-from-file=.fixkit/defines.json`; `dart run fixkit run` adds it.');
+}
+
+/// Whether this computer builds for iPhones: a Mac with Xcode.
+bool developsForIos() {
+  if (!Platform.isMacOS) return false;
+  if (Directory('/Applications/Xcode.app').existsSync()) return true;
+  try {
+    final result = Process.runSync('xcode-select', ['-p']);
+    return result.exitCode == 0 && '${result.stdout}'.contains('Xcode');
+  } catch (_) {
+    return false;
+  }
 }
 
 Future<void> _ensureHub(Project project, Console console, {required bool lan}) async {

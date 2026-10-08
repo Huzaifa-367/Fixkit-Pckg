@@ -187,10 +187,26 @@ Future<int> runDoctor(List<String> arguments, Console console) async {
   final tools = HostTools();
   final adb = tools.findAdb();
   if (adb == null) {
-    console.info('Android', 'adb not found: emulators still reach the hub at 10.0.2.2');
+    console.warn('Android', 'adb not found, so phones on USB cannot reach the hub (emulators still can, at 10.0.2.2)');
+    console.hint('Install the Android SDK platform-tools, or point fixkit at your SDK: `flutter config --android-sdk <path>`.');
   } else {
-    final devices = await tools.adbDevices();
-    console.ok('Android', devices.isEmpty ? 'adb ready, no device connected' : 'devices: ${devices.join(', ')}');
+    final devices = await tools.adbDeviceStates();
+    if (devices.isEmpty) console.ok('Android', 'adb ready, no device connected  ${console.dim(adb)}');
+    for (final MapEntry(key: serial, value: state) in devices.entries) {
+      switch (state) {
+        case 'device':
+          // Doctor sets the reverse itself when the hub has not (yet).
+          if (await tools.ensureReverse(serial)) {
+            console.ok('Android $serial', 'USB ready: 127.0.0.1:$fixkitPort on the phone reaches this computer (adb reverse)');
+          } else {
+            broken('Android $serial', 'adb reverse tcp:$fixkitPort failed', 'Unplug and replug the phone, then run doctor again.');
+          }
+        case 'unauthorized':
+          broken('Android $serial', 'USB debugging not allowed yet', 'Unlock the phone and accept the "Allow USB debugging?" prompt.');
+        default:
+          broken('Android $serial', 'adb says "$state"', 'Unplug and replug the phone (or run `adb kill-server`), then run doctor again.');
+      }
+    }
   }
   final settings = FixkitSettings.load();
   if (settings.lan) {

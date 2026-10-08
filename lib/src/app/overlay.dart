@@ -602,12 +602,16 @@ class _Presence extends StatelessWidget {
       FixPresence.busy => (_blue, '$name is busy', '$name is finishing another fix; this one is next'),
       FixPresence.idle => (_amber, '$name is idle', 'Say "watch for fixes" in the $name chat, then send'),
       FixPresence.none => (_textDim, 'No agent', 'No editor has fixkit loaded: open the project and reload the window'),
-      FixPresence.offline => (_red, 'fixkit offline', 'The app cannot reach fixkit: run `dart run fixkit doctor`'),
-      FixPresence.outdated => (_amber, 'Updating fixkit', 'An older fixkit hub is running. It is being replaced; if this stays, run `dart run fixkit restart`'),
+      FixPresence.offline => (_red, controller.connection.offlineAdvice.label, controller.connection.offlineAdvice.hint),
+      FixPresence.outdated => (_amber, 'Update fixkit', 'An older fixkit hub is running. Reload your editor window, or run `dart run fixkit restart` in the project'),
       FixPresence.checking => (_textDim, 'Checking...', 'Looking for your agent'),
     };
+    final offline = info.state == FixPresence.offline;
     return Tooltip(
       message: detail,
+      // Offline, a tap says what to do.
+      triggerMode: offline ? TooltipTriggerMode.tap : TooltipTriggerMode.longPress,
+      showDuration: offline ? const Duration(seconds: 12) : const Duration(milliseconds: 1500),
       child: _Glass(
         radius: 17,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),

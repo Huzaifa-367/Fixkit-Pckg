@@ -8,6 +8,10 @@ class _NoConnection implements FixConnection {
   String get description => 'not supported on this platform';
 
   @override
+  ({String label, String hint}) get offlineAdvice =>
+      (label: 'fixkit offline', hint: 'fixkit runs on Android, iOS and desktop, not on the web.');
+
+  @override
   Future<Map<String, Object?>> report(Map<String, Object?> body) =>
       Future.error(const FixHubUnreachable('fixkit runs on Android, iOS and desktop, not on the web'));
 

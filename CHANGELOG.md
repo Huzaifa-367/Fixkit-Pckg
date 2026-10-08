@@ -4,6 +4,19 @@ All notable changes to fixkit. The format follows [Keep a Changelog](https://kee
 
 ## Unreleased
 
+### Fixed
+- **Android phones on USB showed "fixkit offline".**
+  - The hub now checks every few seconds that the phone's `adb reverse` is still in place, and sets it again when `flutter run` or the IDE has restarted the adb server (which drops it).
+  - It prefers the Android SDK's own adb to one on PATH, since a different adb version restarts the adb server on every call.
+  - It looks for adb again if it wasn't found at first.
+  - `doctor` lists each device with its state, explains "unauthorized" and "offline", and sets the reverse itself.
+- **The app no longer stops an older hub.** When the editor still ran an older fixkit, nothing started a new hub and the app was left offline. The badge now says **Update fixkit** and how.
+- **The app tries the computer's loopback first,** then the Wi-Fi address, so USB and emulator connections never wait on Wi-Fi.
+
+### Added
+- **Advice for the device you are on.** Tap the offline badge to see what to do on this phone (Android on USB, iPhone, simulator). The debug console says the same at launch.
+- **iPhones work without extra steps on a Mac with Xcode.** `init` turns on Wi-Fi devices by itself there, since an iPhone reaches the computer only over Wi-Fi, even on a cable. `--no-lan` keeps it off.
+
 ## 0.1.3
 
 ### Fixed

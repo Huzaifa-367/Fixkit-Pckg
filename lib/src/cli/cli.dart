@@ -16,7 +16,9 @@ Usage: dart run fixkit <command> [options]
 
 Commands:
   init        Set up this project and your editors (run once).
-                --lan            also reach phones on Wi-Fi (iPhones need it)
+                --lan            also reach phones on Wi-Fi (iPhones need it; on by
+                                 itself on a Mac with Xcode)
+                --no-lan         keep Wi-Fi devices off
                 --editors=a,b    only these: cursor, vscode, antigravity,
                                  windsurf, claude, gemini
                 --no-main        leave lib/main.dart alone

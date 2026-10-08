@@ -103,17 +103,50 @@ class IoFixConnection implements FixConnection {
     return looking.timeout(const Duration(seconds: 4), onTimeout: () => null);
   }
 
+  /// Loopback first: simulators, emulators and USB Android phones (through
+  /// `adb reverse`) answer there at once, and on a phone nothing listens on
+  /// it, so the Wi-Fi address comes next without a wait.
   List<Uri> get candidates {
     final explicit = _explicit;
     if (explicit != null) return explicit;
-    final found = <Uri>[];
+    final found = <Uri>[Uri.parse('http://127.0.0.1:$fixkitPort')];
+    if (Platform.isAndroid) found.add(Uri.parse('http://10.0.2.2:$fixkitPort'));
     if (_definedHost.isNotEmpty) {
       final host = _definedHost.contains(':') ? _definedHost : '$_definedHost:$fixkitPort';
       found.add(Uri.parse('http://$host'));
     }
-    found.add(Uri.parse('http://127.0.0.1:$fixkitPort'));
-    if (Platform.isAndroid) found.add(Uri.parse('http://10.0.2.2:$fixkitPort'));
     return found;
+  }
+
+  /// A real iPhone or iPad (not the simulator).
+  static bool get _physicalIos => Platform.isIOS && !Platform.environment.containsKey('SIMULATOR_DEVICE_NAME');
+
+  @override
+  ({String label, String hint}) get offlineAdvice {
+    if (_physicalIos) {
+      return _definedHost.isEmpty
+          ? (
+              label: 'iPhone: set up Wi-Fi',
+              hint: 'An iPhone reaches your computer over Wi-Fi, not over the cable. On the computer run '
+                  '`dart run fixkit init --lan` in the project, then stop the app and run it again from your editor. '
+                  'Keep the iPhone on the same Wi-Fi and allow Local Network when iOS asks.',
+            )
+          : (
+              label: 'fixkit offline',
+              hint: 'Could not reach fixkit at $_definedHost. Is the iPhone on the same Wi-Fi as the computer, and is '
+                  'Local Network on for this app (Settings > Privacy & Security > Local Network)? If the computer '
+                  'changed networks, run the app again so it gets the new address. `dart run fixkit doctor` checks the computer.',
+            );
+    }
+    if (Platform.isAndroid) {
+      return (
+        label: 'fixkit offline',
+        hint: 'Over USB the app reaches fixkit through `adb reverse`, which the fixkit hub sets up. Keep the project '
+            'open in your editor (it starts the hub), check that `adb devices` lists the phone as "device", '
+            'and run `dart run fixkit doctor`.',
+      );
+    }
+    return (label: 'fixkit offline', hint: 'The app cannot reach fixkit: run `dart run fixkit doctor`.');
   }
 
   @override

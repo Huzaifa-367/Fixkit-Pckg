@@ -362,15 +362,17 @@ class FixKitController {
     _presenceNotifier.value = (state: next, agent: agent);
   }
 
-  /// A hub left over from an older fixkit is asked, once, to stop. The
-  /// editor's fixkit starts the current one within seconds.
+  /// A hub left over from an older fixkit. The app no longer stops it
+  /// itself: an editor still running an older fixkit would not start a new
+  /// one, and the app would be left offline. A current editor replaces it
+  /// within seconds; otherwise the person reloads the editor or restarts it.
   Future<void> _replaceOutdatedHub() async {
     if (_restartAsked) return;
     _restartAsked = true;
-    final stopped = await connection.restartHub();
-    debugPrint(stopped
-        ? 'fixkit: stopped an outdated fixkit hub (${_hubVersion ?? 'older'}); your editor starts the current one.'
-        : 'fixkit: the fixkit hub is outdated (${_hubVersion ?? 'older'}). Run `dart run fixkit restart` in the project.');
+    debugPrint(
+      'fixkit: the fixkit hub runs an older version (${_hubVersion ?? 'older'}) than this app ($fixkitVersion). '
+      'Reload your editor window so it runs the new fixkit, or run `dart run fixkit restart` in the project.',
+    );
   }
 
   /// Sends the typed comment with the press it describes.
@@ -447,10 +449,7 @@ class FixKitController {
     if (answer == null) {
       if (kind == 'launch' && !_hinted) {
         _hinted = true;
-        debugPrint(
-          'fixkit: no fixkit hub found (${connection.description}). '
-          'Run `dart run fixkit init` in the project, then reload your editor window.',
-        );
+        debugPrint('fixkit: no fixkit hub found (tried ${connection.description}). ${connection.offlineAdvice.hint}');
       }
       return;
     }

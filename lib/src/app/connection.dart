@@ -46,6 +46,10 @@ abstract class FixConnection {
 
   /// Where the hub was found, for messages.
   String get description;
+
+  /// What to show when the hub cannot be reached, for this device: a short
+  /// badge label and what to do.
+  ({String label, String hint}) get offlineAdvice;
 }
 
 /// The connection for this platform: HTTP on mobile and desktop, none on web.
