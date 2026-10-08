@@ -16,7 +16,7 @@ class _NoConnection implements FixConnection {
       Future.error(const FixHubUnreachable('not supported on this platform'));
 
   @override
-  Future<Map<String, Object?>?> signal(String kind) async => null;
+  Future<Map<String, Object?>?> signal(String kind, {String? appFile}) async => null;
 
   @override
   Future<Map<String, Object?>?> presence({String? file}) async => null;

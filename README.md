@@ -96,6 +96,7 @@ The screenshot is also attached as an image.
   - the app's own long-press menu does not open.
 
   A ring under the finger fills while you hold, so you can see the press coming. Moving the finger (a scroll) or using a second finger (a pinch) cancels the press.
+- **Gaps count too.** Pressing the empty space in a row, around a heading or between an avatar and a name selects the widget drawn there (the Row, the header), not the whole screen.
 - **Select a Row, Column or card.** The composer's selection bar lists the pressed widget and the widgets of your own code around it, for example `Text › Row › Padding › TransactionRow › Column`. Tap one, or use **−** and **+**, to move the selection. The light glides to it and the label shows its file and line. The report is then about that widget (its spacing, alignment or children), and it still says which widget was under the finger. Suggestions change to fit, such as *Align the items* for a Row.
 - **The composer.** The selected widget is lit and labelled with its file and line. Above the keyboard there are three compact rows:
   - the selection bar;
@@ -190,7 +191,7 @@ fixkit puts the agent's change on screen by itself. You don't need to press hot 
 - **How.** Every `flutter run` starts a Dart Development Service on your computer, and the Flutter tool registers its hot reload there. At launch the app looks up where that service is (from its own VM service) and tells the hub. The hub then asks the Flutter tool to hot reload, exactly as the editor's reload button does, so the editor's session, debug console and compiler stay in step.
 - **When.**
   - When the agent calls fixkit's `hot_reload` tool.
-  - When the agent's edits pause for a moment, so each change shows as it is made. Set `"autoReload": false` in `~/.fixkit/config.json` to turn this off.
+  - When Dart files in `lib` change and then stop changing for a moment, with or without a fix report, so every agent edit shows as it is made. If the editor already reloaded on save, fixkit doesn't reload again. Set `"autoReload": false` in `~/.fixkit/config.json` to turn this off.
   - When the agent calls `complete_fix` and the app hasn't reloaded since its last edit.
 - **Confirmation.** The app's own reload signal (`State.reassemble`) confirms each reload, whatever triggered it. A compile error comes back to the agent, which fixes it and reloads again.
 
@@ -202,6 +203,7 @@ fixkit puts the agent's change on screen by itself. You don't need to press hot 
 dart run fixkit init        set up the project and editors (--lan, --editors=..., --dry-run, --no-main, --no-dart-mcp)
 dart run fixkit doctor      check everything (--start starts the hub)
 dart run fixkit run         flutter run that agents can hot reload (--lan; other options go to flutter run)
+dart run fixkit reload      hot reload the app the way the agent does, and say what happened
 dart run fixkit status      connected agents and recent reports (--json)
 dart run fixkit upgrade     move to the newest (or a given) release and refresh the setup
 dart run fixkit restart     replace the running hub with this project's fixkit
@@ -280,7 +282,11 @@ The badge at the start of the suggestions row says what the app sees:
 | **fixkit offline** | The app cannot reach the hub | `dart run fixkit doctor`. Physical Android phones need adb (the hub runs `adb reverse` by itself); iPhones need `init --lan` |
 | **Updating fixkit** | A hub from an older fixkit was running | The app asks it to stop, and your editor starts the current one within seconds. If it persists, run `dart run fixkit restart` |
 
-If the agent's changes don't reload by themselves, restart the app once (not just hot reload it): the app tells the hub how to reach its Flutter session at launch. `dart run fixkit status` lists the apps the hub can reload under **Agent hot reload**.
+If the agent's changes don't reload by themselves:
+
+1. Stop the app and start it again (a hot reload is not enough). The debug console should say `fixkit: agent hot reload is on`.
+2. Run `dart run fixkit reload`. It reloads the app the way the agent does and says what went wrong, if anything.
+3. `dart run fixkit doctor` checks the rest, such as an outdated hub.
 
 Hot reload or restart the app after upgrading fixkit, and reload the editor window, so all three parts run the same version. `dart run fixkit doctor` checks for that too.
 

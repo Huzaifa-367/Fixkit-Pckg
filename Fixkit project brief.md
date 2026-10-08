@@ -1,8 +1,8 @@
 # fixkit for Flutter: project brief
 
-**Owner:** Fahad Zia · **Repository:** https://github.com/Huzaifa-367/Fixkit-Pckg · **Version:** 0.1.7 · **Updated:** 8 October 2026
+**Owner:** Muhammad Huzaifa · **Repository:** https://github.com/Huzaifa-367/Fixkit-Pckg · **Version:** 0.1.8 · **Updated:** 8 October 2026
 
-**Status:** v0.1.7 is committed and tagged locally (`v0.1.4` to `v0.1.7`) and ready to push. It has not been compiled yet, because the build environment had no Flutter SDK. Independent code reviews traced the changes and tests against the code, and their findings are fixed. The first real run of `flutter analyze` and `flutter test` (CI does both on push) is the next step, followed by a real-device check of agent hot reload.
+**Status:** v0.1.8 is committed and tagged locally (`v0.1.4` to `v0.1.8`) and ready to push. It has not been compiled yet, because the build environment had no Flutter SDK. Independent code reviews traced the changes and tests against the code, and their findings are fixed. The first real run of `flutter analyze` and `flutter test` (CI does both on push) is the next step, followed by a real-device check of agent hot reload (`dart run fixkit reload`).
 
 ## What it is
 
@@ -19,7 +19,7 @@ It works in any MCP editor: Cursor, VS Code (Copilot agent mode), Antigravity, W
 
 ```yaml
 dependencies:
-  fixkit: ^0.1.7
+  fixkit: ^0.1.8
 ```
 
 or from GitHub:
@@ -29,7 +29,7 @@ dependencies:
   fixkit:
     git:
       url: https://github.com/Huzaifa-367/Fixkit-Pckg.git
-      ref: v0.1.7
+      ref: v0.1.8
 ```
 
 then `flutter pub get` and `dart run fixkit init`.
@@ -53,7 +53,7 @@ After that, the user reloads the editor once, runs the app, and says **"watch fo
 | Which editors | Any MCP editor. The agent long-polls `wait_for_fix_report`, because no editor allows prompt injection. |
 | Setup effort | Plug and play: two commands, no servers, ports or IPs to configure |
 | Finding the widget | In-process, using Flutter's widget creation locations (file:line), with no marks needed |
-| Agent hot reload (0.1.7) | Hot reload on save does not fire when an agent writes files itself, so fixkit reloads the app on its own. At launch the app asks its own VM service, which redirects to the Dart Development Service (DDS) that `flutter run` started on the computer, and sends that address to the hub. The hub calls the `reloadSources` service the Flutter tool registered there, which is the same as pressing the editor's reload button. It works from any editor, Android Studio or a terminal, on any device. It runs on `hot_reload`, when the agent's edits pause (`autoReload`, on by default), and in `complete_fix` when nothing has reloaded since the last edit. `dart run fixkit run` still works as another route. |
+| Agent hot reload (0.1.7–0.1.8) | Hot reload on save does not fire when an agent writes files itself, so fixkit reloads the app on its own. At launch the app asks its own VM service, which redirects to the Dart Development Service (DDS) that `flutter run` started on the computer. The app sends that address to the hub, along with its `FixKit` location so the hub knows the project. In a terminal `flutter run` the app looks again a few seconds after launch. The hub calls the `reloadSources` service the Flutter tool registered there, which is the same as pressing the editor's reload button. It works from any editor, Android Studio or a terminal, on any device. From 0.1.8 the hub watches the project's `lib` and reloads 2.5 s after any Dart edit stops, with or without a fix report, unless the editor's reload on save already covered it (`autoReload`, on by default). It also reloads on `hot_reload`, and in `complete_fix` when nothing has reloaded since the last edit. `dart run fixkit reload` checks it by hand; `dart run fixkit run` still works as another route. |
 | Confirming a fix is live | The app's `reassemble()` signal on every hot reload, whatever triggered it. A reload in the middle of a fix keeps the report open; only `complete_fix` finishes it. |
 | In-app UI | AI-agent style: a composer with a presence badge ("Cursor is watching") and suggestion chips, and a live agent card with an orb, steps, elapsed time and a typed summary. The full-screen edge glow was removed in 0.1.6. |
 | Pressing interactive widgets | A raw pointer listener outside the gesture arena fires at 450 ms, before Flutter's own 500 ms long press, then cancels the pointer. A ring under the finger fills while holding (from 0.1.6). Text fields, buttons and widgets with their own long press never react; a scroll or a pinch cancels the press. |
@@ -71,7 +71,7 @@ After that, the user reloads the editor once, runs the app, and says **"watch fo
 | Hub up, no agent watching | Shown as queued. After 3 s the request goes to the clipboard and a desktop notification appears. |
 | Agent busy | The badge says busy; the report is queued and the agent picks it up on its next wait. |
 | Agent takes it | The card shows live steps as they happen: sent, reading file:line, edited (noticed by the hub), hot reloading, fix on screen. The agent's summary is typed out. |
-| Agent edits files | The hub hot reloads the app when the edits pause. A compile error goes back to the agent and shows on the card. |
+| Agent (or any tool) edits Dart files | The hub hot reloads the app once the edits pause, fix report or not. A compile error on `hot_reload` goes back to the agent and shows on the card. |
 | Agent fails, or asks a question | A red or amber card. Questions stay on screen until dismissed. |
 | Agent disconnects mid-fix | The report goes back to the queue. |
 | Agent goes quiet for 15 min | The report is marked not fixed, with a hint. |
@@ -111,11 +111,11 @@ After that, the user reloads the editor once, runs the app, and says **"watch fo
 - **Runtime.**
   - An older hub gives way to a newer one automatically, including when the app detects it.
   - The app shows "Reload your editor to update fixkit" when the hub speaks an older protocol.
-  - `doctor` and `version` show the installed source and version, the hub's version, and the newest release from pub.dev or GitHub tags. `status` lists the apps the hub can hot reload.
+  - `doctor` and `version` show the installed source and version, the hub's version, and the newest release from pub.dev or GitHub tags. `doctor` and `status` also show whether the agent can hot reload the app.
 
 ## Commands
 
-`init`, `doctor`, `run`, `status`, `upgrade`, `version`, `restart`, `uninstall` (plus `mcp` and `hub`, which editors start themselves).
+`init`, `doctor`, `run`, `status`, `reload`, `upgrade`, `version`, `restart`, `uninstall` (plus `mcp` and `hub`, which editors start themselves).
 
 ## Demo
 
@@ -124,7 +124,11 @@ An animated liquid-glass walkthrough of the full flow, including the hold ring: 
 ## Next steps
 
 1. Push the package and its tags to https://github.com/Huzaifa-367/Fixkit-Pckg. Then run `flutter pub get`, `flutter analyze` and `flutter test`, and fix whatever the compiler reports.
-2. Check agent hot reload on a real setup: run the app from Cursor or VS Code (and once from a terminal `flutter run`), restart it once after upgrading, then let the agent fix something. `dart run fixkit status` should list the app under "Agent hot reload".
+2. Check agent hot reload on a real setup:
+   1. Upgrade to 0.1.8 and fully restart the app.
+   2. The debug console should say "fixkit: agent hot reload is on".
+   3. Run `dart run fixkit reload`; it reloads the app or prints why it couldn't.
+   4. Then let the agent edit a file and watch the app reload by itself.
 3. Try the demo:
    1. `cd example`
    2. `flutter create . --platforms=android,ios`
@@ -134,7 +138,7 @@ An animated liquid-glass walkthrough of the full flow, including the hold ring: 
    1. Check that the name `fixkit` is free on pub.dev.
    2. Publish the first version by hand with `dart pub publish`, because automated publishing needs the package to exist first.
    3. Enable automated publishing for the repository.
-   4. Push the tag `v0.1.7`.
+   4. Push the tag `v0.1.8`.
 5. Optional later: a VS Code/Open VSX extension with a queue sidebar.
 
 ## Known limits
@@ -144,4 +148,5 @@ An animated liquid-glass walkthrough of the full flow, including the hold ring: 
 - The agent decides how long it keeps watching. If it stops, say "watch for fixes" again; reports wait in the queue meanwhile.
 - Editor configs hold the path to the Dart SDK. `init`, or the automatic refresh, rewrites it after a Flutter upgrade.
 - Agent hot reload needs the app's DDS, which every normal `flutter run` starts. A run with `--no-dds` falls back to `fixkit run`, hot reload on save or the Dart MCP server.
-- `FixConnection.status` gained an optional `since` parameter in 0.1.6; only custom connections (test fakes) need updating.
+- Edits an agent leaves unsaved in an editor tab are not on disk, so nothing can reload them until they are saved.
+- `FixConnection.status` gained an optional `since` parameter in 0.1.6, and `FixConnection.signal` an optional `appFile` in 0.1.8; only custom connections (test fakes) need updating.

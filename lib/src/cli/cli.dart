@@ -30,6 +30,8 @@ Commands:
                 --lan            pass the Wi-Fi host and token to the app
                 Other options go to `flutter run`.
   status      Show connected agents and recent reports.  (--json)
+  reload      Hot reload the running app the way the agent does, and say
+              what happened (to check agent hot reload).
   restart     Replace the running hub with this project's fixkit (after an
               upgrade, or when the app says the hub is outdated).
   upgrade     Move to the newest release (or the one given, like 0.1.5),
@@ -56,6 +58,8 @@ Future<int> runCli(List<String> arguments) async {
       return runFlutter(rest, console);
     case 'status':
       return runStatus(rest, console);
+    case 'reload':
+      return runReload(rest, console);
     case 'uninstall':
       return runUninstall(rest, console);
     case 'mcp':

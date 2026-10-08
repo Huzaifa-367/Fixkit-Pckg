@@ -146,6 +146,41 @@ void main() {
     expect(answer?['reloaded'], isTrue);
   });
 
+  test('any agent edit hot reloads the app, with or without a fix report', () async {
+    await startHub();
+    await post('/signal', {'kind': 'launch', 'flutterSession': session, 'appFile': location(project, 'lib/main.dart')});
+    expect(hub.appSessions.keys.single, normalizePath(project.path));
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    File('${project.path}/lib/theme.dart').writeAsStringSync('// theme\n');
+    for (var i = 0; i < 40 && reloader.calls.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    expect(reloader.calls, hasLength(1));
+  });
+
+  test('an edit the editor already reloaded is not reloaded again', () async {
+    await startHub();
+    await post('/signal', {'kind': 'launch', 'flutterSession': session, 'appFile': location(project, 'lib/main.dart')});
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    File('${project.path}/lib/theme.dart').writeAsStringSync('// theme\n');
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await post('/signal', {'kind': 'reload'}); // hot reload on save
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    expect(reloader.calls, isEmpty);
+  });
+
+  test('a session found after launch is remembered without counting as a reload', () async {
+    await startHub(autoReload: false);
+    await takeReport();
+    hub.appSessions.clear();
+    final answer = await post('/signal', {'kind': 'session', 'flutterSession': session, 'appFile': location(project, 'lib/main.dart')});
+    expect(answer?['ok'], isTrue);
+    expect(hub.appSessions, isNotEmpty);
+    final status = await get('/status', {'id': 'r1'});
+    expect(status?['status'], FixStatus.fixing);
+    expect(activity(status), isNot(contains('Hot reloaded')));
+  });
+
   group('DdsReloader', () {
     late HttpServer dds;
     late List<Map<String, Object?>> received;

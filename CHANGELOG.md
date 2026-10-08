@@ -4,6 +4,20 @@ All notable changes to fixkit. The format follows [Keep a Changelog](https://kee
 
 ## Unreleased
 
+### Fixed
+- **Presses that missed.** A press on a gap (between an avatar and a name, beside a heading, the empty part of a header row) or on a widget that takes no touches fell through to whatever was behind it. Often that was the whole app, so the composer opened with nothing selected. fixkit now looks for the app's own widget drawn under the finger: the Row, the header or the Text. Empty spacers (`SizedBox`, `Spacer`) count as the widget around them. Widgets that stick out of a `Stack` (an avatar over a banner) and pinned headers in scroll views are found too.
+- **fixkit's own widgets never count as the app's,** even when fixkit is a path dependency to a clone.
+- **Agent hot reload without DDS.** A run with `--no-dds` is reloaded through the app's VM service: on this computer for simulators and desktop, and through flutter's `adb forward` for Android.
+- **Hot reload after any agent edit, not only during a fix.** The hub now watches the `lib` folder of every app it can reload. When an agent (or any tool) writes Dart files and stops for a moment, the app hot reloads, whether or not there is a fix report. If the editor's reload on save already caught the edit, nothing happens twice.
+- **The app tells the hub which project it is.** It sends where its `FixKit` is constructed, so the hub knows the project from the first launch, before any report.
+- **Terminal `flutter run` and runs without debugging work too.** There the app can start before the Flutter session is ready, so it looks again a few seconds after launch and tells the hub once it finds it.
+- **Edits made during a reload are not lost.** A reload only counts for the edits made before it began, so a later edit gets its own reload. Automatic reloads wait 2.5 s after the last change.
+
+### Added
+- `dart run fixkit reload` hot reloads the app the way the agent does and says what happened. Use it to check agent hot reload.
+- `doctor` checks agent hot reload.
+- At launch, the debug console says whether agent hot reload is on.
+
 ## 0.1.2
 
 ### Fixed

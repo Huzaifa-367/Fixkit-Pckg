@@ -432,10 +432,14 @@ class FixKitController {
     }
   }
 
+  /// Where the app's `FixKit` is constructed (its `main.dart`), sent with
+  /// each signal so the hub knows which project the app is.
+  String? appFile;
+
   /// The app launched or hot reloaded: the hub decides whether that put a fix
   /// on screen, and tells which report to keep following.
   Future<void> signal(String kind) async {
-    final answer = await connection.signal(kind);
+    final answer = await connection.signal(kind, appFile: appFile);
     if (_disposed) return;
     // Knowing who is watching before the first press makes the badge right
     // at once; it also finds a hub left over from an older fixkit.

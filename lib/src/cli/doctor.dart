@@ -147,6 +147,16 @@ Future<int> runDoctor(List<String> arguments, Console console) async {
         }
       }
     }
+    final apps = state?['apps'] is Map ? (state!['apps'] as Map).keys.whereType<String>() : const <String>[];
+    final runners = ((state?['runners'] as List?) ?? const []).whereType<Map>().map((runner) => '${runner['project']}');
+    bool ours(String root) => isWithin(root, project.root) || isWithin(project.root, root);
+    if (runners.any(ours)) {
+      console.ok('Hot reload', 'the agent reloads the app through `fixkit run`');
+    } else if (apps.any(ours)) {
+      console.ok('Hot reload', 'the agent reloads the app through its Flutter session (any editor)');
+    } else {
+      console.warn('Hot reload', 'no running app known yet: start the app (a full start, not a hot reload); then `dart run fixkit reload` checks it');
+    }
   }
   hub.close();
 

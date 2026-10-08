@@ -30,8 +30,9 @@ abstract class FixConnection {
   Future<Map<String, Object?>> status(String id, {int? since});
 
   /// Says the app launched (`launch`) or hot reloaded (`reload`); answers with
-  /// the report the app should follow, if any. Never throws.
-  Future<Map<String, Object?>?> signal(String kind);
+  /// the report the app should follow, if any. [appFile] is where the app's
+  /// `FixKit` is constructed, so the hub knows the app's project. Never throws.
+  Future<Map<String, Object?>?> signal(String kind, {String? appFile});
 
   /// Which agent would take a report: `{agent, watching, busy}`. [file] is
   /// the pressed widget's file, so the hub names that project's agent.

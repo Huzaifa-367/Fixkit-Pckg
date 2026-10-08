@@ -41,6 +41,51 @@ class IoFixConnection implements FixConnection {
   Future<Map<String, Object?>?>? _lookingUp;
   DateTime? _lookedUpAt;
 
+  bool _said = false;
+  String? _appFile;
+  bool _lookingAgain = false;
+
+  /// A terminal `flutter run` starts the app before its DDS takes over, so
+  /// the launch lookup can come up empty. Look again a few times, and tell
+  /// the hub as soon as the session is there, so agent edits reload the app
+  /// without waiting for a reload or a report.
+  void _lookAgainLater() {
+    if (_lookingAgain) return;
+    _lookingAgain = true;
+    unawaited(() async {
+      for (final wait in const [Duration(seconds: 3), Duration(seconds: 10), Duration(seconds: 30)]) {
+        await Future<void>.delayed(wait);
+        if (_session != null) return;
+        final session = await findFlutterSession();
+        if (session == null) continue;
+        _session = session;
+        // ignore: avoid_print
+        print('fixkit: agent hot reload is on (through this run\'s Flutter session).');
+        try {
+          await _call('POST', '/signal', body: {
+            'kind': 'session',
+            'protocol': fixkitProtocol,
+            'version': fixkitVersion,
+            if (_appFile != null) 'appFile': _appFile,
+            'flutterSession': session,
+          });
+        } catch (_) {}
+        return;
+      }
+    }());
+  }
+
+  /// Says once, in the debug console, whether fixkit can hot reload the app
+  /// for the agent.
+  void _sayHowItReloads(Map<String, Object?>? session) {
+    if (_said) return;
+    _said = true;
+    // ignore: avoid_print
+    print(session != null
+        ? 'fixkit: agent hot reload is on (through this run\'s Flutter session).'
+        : 'fixkit: no Flutter session found yet for agent hot reload; fixkit tries again on the next reload or report.');
+  }
+
   Future<Map<String, Object?>?> _flutterSession() async {
     final found = _session;
     if (found != null) return found;
@@ -216,13 +261,19 @@ class IoFixConnection implements FixConnection {
   }
 
   @override
-  Future<Map<String, Object?>?> signal(String kind) async {
+  Future<Map<String, Object?>?> signal(String kind, {String? appFile}) async {
     try {
+      if (appFile != null) _appFile = appFile;
       final session = await _flutterSession();
+      if (kind == 'launch') {
+        _sayHowItReloads(session);
+        if (session == null) _lookAgainLater();
+      }
       return await _call('POST', '/signal', body: {
         'kind': kind,
         'protocol': fixkitProtocol,
         'version': fixkitVersion,
+        if (appFile != null) 'appFile': appFile,
         if (session != null) 'flutterSession': session,
       });
     } catch (_) {

@@ -35,7 +35,7 @@ class FakeConnection implements FixConnection {
   Future<Map<String, Object?>> status(String id, {int? since}) async => later ?? {'id': id, 'status': FixStatus.live};
 
   @override
-  Future<Map<String, Object?>?> signal(String kind) async {
+  Future<Map<String, Object?>?> signal(String kind, {String? appFile}) async {
     signals.add(kind);
     return null;
   }
@@ -376,6 +376,34 @@ void main() {
     await gesture.up();
     await tester.pump();
     expect(find.byType(TextField), findsNothing);
+  });
+
+  testWidgets('a press on the gap in a Row selects the Row, not the whole screen', (tester) async {
+    final connection = FakeConnection();
+    await tester.pumpWidget(app(
+      connection,
+      body: const Align(
+        alignment: Alignment.topLeft,
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [Text('Ahmed Khan'), SizedBox(width: 160), Text('Bell')],
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+    final name = tester.getRect(find.text('Ahmed Khan'));
+    await tester.longPressAt(Offset(name.right + 80, name.center.dy));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.textContaining('Row  ·  '), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'Align these');
+    await tester.testTextInput.receiveAction(TextInputAction.send);
+    await tester.pump();
+    expect((connection.reports.single['target'] as Map)['widget'], 'Row');
+    await settleCard(tester);
   });
 
   testWidgets('the selection widens to the Row, Column or card around the press', (tester) async {

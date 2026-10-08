@@ -167,6 +167,22 @@ class HostTools {
 
   Set<String> get reversedDevices => Set.unmodifiable(_reversed);
 
+  /// The port on this computer that `adb forward` (set up by `flutter run`)
+  /// sends to [devicePort] on an Android device, if any.
+  Future<int?> adbForwardedPort(int devicePort) async {
+    final adb = findAdb();
+    if (adb == null) return null;
+    try {
+      final result = await Process.run(adb, ['forward', '--list']).timeout(const Duration(seconds: 5));
+      if (result.exitCode != 0) return null;
+      for (final line in LineSplitter.split('${result.stdout}')) {
+        final match = RegExp(r'tcp:(\d+)\s+tcp:(\d+)\s*$').firstMatch(line.trim());
+        if (match != null && int.parse(match[2]!) == devicePort) return int.parse(match[1]!);
+      }
+    } catch (_) {}
+    return null;
+  }
+
   /// The computer's address on the local network, for phones on Wi-Fi.
   Future<String?> lanAddress() async {
     try {

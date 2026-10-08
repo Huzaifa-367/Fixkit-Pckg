@@ -20,18 +20,22 @@ Future<Map<String, Object?>?> findFlutterSession() async {
     final info = await developer.Service.getInfo().timeout(const Duration(seconds: 2));
     final ws = info.serverWebSocketUri;
     if (ws == null) return null;
-    final dds = await _ddsBehind(ws);
-    if (dds == null) return null;
-    return {
-      'dds': dds.toString(),
-      'isolate': developer.Service.getIsolateId(Isolate.current),
-    };
+    final behind = await _ddsBehind(ws);
+    if (behind == null) return null;
+    final isolate = developer.Service.getIsolateId(Isolate.current);
+    // Without DDS (`--no-dds`) the Flutter tool talks to the VM service
+    // itself: the hub reaches it on this computer (simulators, desktop) or
+    // through flutter's `adb forward` (Android).
+    if (behind.direct) return {'vm': ws.toString(), 'isolate': isolate, 'platform': Platform.operatingSystem};
+    return {'dds': behind.uri.toString(), 'isolate': isolate};
   } catch (_) {
     return null;
   }
 }
 
-Future<Uri?> _ddsBehind(Uri ws) async {
+/// Where the VM service at [ws] sends WebSocket clients: the DDS, or itself
+/// ([direct]) when there is no DDS. Null when it cannot be told.
+Future<({Uri uri, bool direct})?> _ddsBehind(Uri ws) async {
   final client = HttpClient()
     ..connectionTimeout = const Duration(seconds: 2)
     ..findProxy = (_) => 'DIRECT';
@@ -48,13 +52,13 @@ Future<Uri?> _ddsBehind(Uri ws) async {
     if (response.statusCode == HttpStatus.switchingProtocols) {
       // No DDS: the VM service took the connection itself.
       (await response.detachSocket()).destroy();
-      return null;
+      return (uri: ws, direct: true);
     }
     final location = response.headers.value(HttpHeaders.locationHeader);
     await response.drain<void>().catchError((Object _) {});
     if (location == null || !response.isRedirect) return null;
     final dds = ws.resolve(location);
-    return dds.scheme == 'ws' || dds.scheme == 'wss' || dds.scheme == 'http' ? dds : null;
+    return dds.scheme == 'ws' || dds.scheme == 'wss' || dds.scheme == 'http' ? (uri: dds, direct: false) : null;
   } finally {
     client.close(force: true);
   }

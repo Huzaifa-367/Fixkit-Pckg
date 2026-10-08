@@ -91,7 +91,17 @@ class _FixKitState extends State<FixKit> with WidgetsBindingObserver, TickerProv
     WidgetsBinding.instance.addObserver(this);
     // Tells the hub the app is up: during a fix that means the fix is on
     // screen, whatever started the app.
-    WidgetsBinding.instance.addPostFrameCallback((_) => controller.signal('launch'));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      controller.appFile = creationFileOf(context as Element);
+      // The RepaintBoundary is built in this file: its location says where
+      // fixkit's own sources are.
+      final boundary = _boundary.currentContext;
+      final own = boundary == null ? null : creationFileOf(boundary as Element);
+      final src = own?.replaceAll('\\', '/').lastIndexOf('/lib/src/') ?? -1;
+      if (own != null && src > 0) fixkitSourceRoot = own.replaceAll('\\', '/').substring(0, src + '/lib/src/'.length);
+      controller.signal('launch');
+    });
   }
 
   void _stop() {

@@ -20,8 +20,7 @@ class FixKitChrome extends StatelessWidget {
 /// One widget in the chain from the pressed widget up to the root, with the
 /// place in the source where it was constructed.
 class FixFrame {
-  const FixFrame(
-      {required this.widget, this.file, this.line, this.column, this.text});
+  const FixFrame({required this.widget, this.file, this.line, this.column, this.text});
 
   /// The widget's class name.
   final String widget;
@@ -56,12 +55,7 @@ class FixFrame {
 /// ancestors written in the app's own code (a Row, a Column, a card...).
 @immutable
 class FixScope {
-  const FixScope(
-      {required this.frame,
-      required this.rect,
-      required this.chainIndex,
-      this.name,
-      this.text});
+  const FixScope({required this.frame, required this.rect, required this.chainIndex, this.name, this.text});
 
   final FixFrame frame;
 
@@ -105,8 +99,7 @@ class FixInspection {
   });
 
   /// Nothing could be inspected: only the touch point is known.
-  factory FixInspection.empty(Offset touch) =>
-      FixInspection(touch: touch, chain: const [], tracking: false);
+  factory FixInspection.empty(Offset touch) => FixInspection(touch: touch, chain: const [], tracking: false);
 
   /// Where the finger was, in logical pixels of the view.
   final Offset touch;
@@ -138,8 +131,7 @@ class FixInspection {
   final List<String> nearby;
 
   /// The selected scope.
-  FixScope? get scope =>
-      scopes.isEmpty ? null : scopes[selected.clamp(0, scopes.length - 1)];
+  FixScope? get scope => scopes.isEmpty ? null : scopes[selected.clamp(0, scopes.length - 1)];
 
   /// The widget the finger was on.
   FixScope? get pressed => scopes.isEmpty ? null : scopes.first;
@@ -202,8 +194,7 @@ class FixInspection {
           'index': selected,
           'widgets': [for (final scope in scopes) scope.label],
         },
-      if (named != null && _insideNamed)
-        'named': {'name': named!.name, ...named!.frame.toJson()},
+      if (named != null && _insideNamed) 'named': {'name': named!.name, ...named!.frame.toJson()},
       if (route != null) 'route': route,
       if (screen != null) 'screen': screen,
       if (nearby.isNotEmpty) 'nearby': nearby,
@@ -223,11 +214,18 @@ const int _maxWalk = 400;
 const int _maxChain = 60;
 const int _maxScopes = 12;
 
+/// Where fixkit's own `lib/src/` is, as creation locations spell it. Set at
+/// launch, so fixkit's widgets never count as the app's, however fixkit is
+/// installed (a path dependency to a clone, say).
+String? fixkitSourceRoot;
+
 /// Whether a creation location is in the app's own code rather than in the
 /// Flutter SDK, a pub package or fixkit itself. The hub repeats this check
 /// with the project's real root.
 bool looksLikeAppCode(String file) {
   final path = file.replaceAll('\\', '/');
+  final own = fixkitSourceRoot;
+  if (own != null && path.startsWith(own)) return false;
   const outside = [
     '/packages/flutter/',
     '/flutter/packages/',
@@ -258,11 +256,108 @@ FixInspection inspectAt(Offset position, int viewId) {
     break;
   }
   if (hit == null) return FixInspection.empty(position);
-  return inspectElement(hit, position);
+  final first = _inspect(hit, position);
+
+  // A press on a gap (between the avatar and the name in a Row, around a
+  // heading) or on a widget that takes no touches (a Text under
+  // IgnorePointer, a decoration) falls through to whatever is behind it:
+  // often the whole screen. Then look for the app's own widget drawn under
+  // the finger, by its bounds.
+  final pressedRect = first.inspection.pressed?.rect;
+  final area = _screenArea(hit);
+  if (pressedRect == null || pressedRect.width * pressedRect.height >= area * 0.4) {
+    final drawn = _appElementAt(first.pressed ?? hit, position);
+    if (drawn != null && drawn != first.pressed) {
+      final second = _inspect(drawn, position);
+      final rect = second.inspection.pressed?.rect;
+      if (rect != null && (pressedRect == null || rect.width * rect.height < pressedRect.width * pressedRect.height)) {
+        return second.inspection;
+      }
+    }
+  }
+  return first.inspection;
+}
+
+/// The deepest widget of the app's own code drawn at [touch] inside [root],
+/// whether or not it takes touches: the topmost child at each level, as hit
+/// testing would pick, but by bounds alone.
+Element? _appElementAt(Element root, Offset touch) {
+  final tracking = _isTracking();
+  Element? best;
+  var bestDepth = -1;
+  var visits = 0;
+
+  bool hidden(Widget widget) =>
+      widget is FixKitChrome ||
+      (widget is Offstage && widget.offstage) ||
+      (widget is Visibility && !widget.visible) ||
+      (widget is TickerMode && !widget.enabled);
+
+  // Whether [element]'s render object lets children draw outside it (a Stack
+  // with Clip.none, for an avatar overlapping a banner).
+  bool overflows(Element element) {
+    final box = element.findRenderObject();
+    return box is RenderStack && box.clipBehavior == Clip.none;
+  }
+
+  /// Walks [element]; true when it (or something inside) is a candidate.
+  bool walk(Element element, int depth) {
+    if (++visits > 3000 || hidden(element.widget)) return false;
+    final rect = _rectOf(element);
+    final contains = rect == null || rect.contains(touch);
+    if (!contains && !overflows(element)) return false;
+    var found = false;
+    if (rect != null && contains && depth > bestDepth && element != root) {
+      final location = tracking ? _creationLocations.of(element) : null;
+      if (location != null && looksLikeAppCode(location.file) && !_isSpacer(element.widget)) {
+        best = element;
+        bestDepth = depth;
+        found = true;
+      }
+    }
+    final children = <Element>[];
+    element.visitChildElements(children.add);
+    final widget = element.widget;
+    if (widget is IndexedStack && widget.index != null && children.length == widget.children.length) {
+      final index = widget.index!;
+      if (index >= 0 && index < children.length) found = walk(children[index], depth + 1) || found;
+      return found;
+    }
+    // Later children paint on top, except in a scroll view, where the first
+    // sliver (a pinned header) is on top: the first child that holds the
+    // point and has something of the app's wins.
+    final viewport = element is RenderObjectElement && element.renderObject is RenderViewportBase;
+    final order = viewport ? children : children.reversed;
+    final loose = overflows(element);
+    for (final child in order) {
+      final childRect = _rectOf(child);
+      final inside = childRect == null || childRect.contains(touch) || loose || overflows(child);
+      if (!inside) continue;
+      if (walk(child, depth + 1)) {
+        found = true;
+        if (childRect != null || viewport) break;
+      }
+    }
+    return found;
+  }
+
+  walk(root, 0);
+  return best;
+}
+
+/// Empty space between widgets: a press there is about the widget around it.
+bool _isSpacer(Widget widget) => (widget is SizedBox && widget.child == null) || widget is Spacer;
+
+double _screenArea(Element element) {
+  final view = View.maybeOf(element);
+  if (view == null) return double.infinity;
+  return (view.physicalSize.width / view.devicePixelRatio) * (view.physicalSize.height / view.devicePixelRatio);
 }
 
 /// Inspects [hit], the deepest element under [touch], and its ancestors.
-FixInspection inspectElement(Element hit, Offset touch) {
+FixInspection inspectElement(Element hit, Offset touch) => _inspect(hit, touch).inspection;
+
+({FixInspection inspection, Element? pressed}) _inspect(Element hit, Offset touch) {
   final tracking = _isTracking();
   final chain = <FixFrame>[];
   final elements = <Element>[];
@@ -322,11 +417,7 @@ FixInspection inspectElement(Element hit, Offset touch) {
 
   // The scopes: the app's own widgets that have a size, from the pressed one
   // outwards, up to the first that fills the screen.
-  final view = View.maybeOf(hit);
-  final screenArea = view == null
-      ? double.infinity
-      : (view.physicalSize.width / view.devicePixelRatio) *
-          (view.physicalSize.height / view.devicePixelRatio);
+  final screenArea = _screenArea(hit);
   final scopes = <FixScope>[];
   Element? pressedElement;
   String? pressedText;
@@ -352,8 +443,7 @@ FixInspection inspectElement(Element hit, Offset touch) {
     String? text;
     if (pressedElement == null) {
       pressedElement = elements[i];
-      pressedText =
-          _textAlong(hit, elements[i]) ?? _firstTextInside(elements[i]);
+      pressedText = _textAlong(hit, elements[i]) ?? _firstTextInside(elements[i]);
       text = pressedText;
     } else {
       text = _ownText(widget) ?? _firstTextInside(elements[i]);
@@ -373,14 +463,12 @@ FixInspection inspectElement(Element hit, Offset touch) {
     final rect = _rectOf(elements.first) ?? _rectOf(hit);
     if (rect != null) {
       pressedElement = elements.first;
-      pressedText =
-          _textAlong(hit, elements.first) ?? _firstTextInside(elements.first);
-      scopes.add(FixScope(
-          frame: chain.first, rect: rect, chainIndex: 0, text: pressedText));
+      pressedText = _textAlong(hit, elements.first) ?? _firstTextInside(elements.first);
+      scopes.add(FixScope(frame: chain.first, rect: rect, chainIndex: 0, text: pressedText));
     }
   }
 
-  return FixInspection(
+  final inspection = FixInspection(
     touch: touch,
     chain: chain,
     tracking: tracking,
@@ -390,6 +478,15 @@ FixInspection inspectElement(Element hit, Offset touch) {
     screen: screen ?? screenGuess,
     nearby: _nearbyTexts(pressedElement ?? hit, touch, exclude: pressedText),
   );
+  return (inspection: inspection, pressed: pressedElement);
+}
+
+/// The file [element]'s widget was constructed in, as a `file://` URI, when
+/// widget creation is tracked. For `FixKit` that is the app's `main.dart`, which
+/// tells the hub which project the app is.
+String? creationFileOf(Element element) {
+  if (!_isTracking()) return null;
+  return _creationLocations.of(element)?.file;
 }
 
 bool _isTracking() {

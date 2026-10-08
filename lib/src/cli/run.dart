@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../protocol.dart';
 import '../server/hub_client.dart';
 import '../server/paths.dart';
 import 'console.dart';
@@ -206,6 +207,43 @@ Future<int> runRestart(List<String> arguments, Console console) async {
     return 0;
   } catch (error) {
     console.fail('Hub', '$error');
+    return 1;
+  } finally {
+    hub.close();
+  }
+}
+
+/// `dart run fixkit reload`: hot reloads this project's app the way the
+/// agent's `hot_reload` tool does, and says what happened.
+Future<int> runReload(List<String> arguments, Console console) async {
+  final project = Project.find();
+  final hub = HubClient();
+  try {
+    if (await hub.hello() == null) {
+      console.line('${console.red('✖')} The fixkit hub is not running. Open the project in your editor, or run `dart run fixkit doctor --start`.');
+      return 1;
+    }
+    final answer = await hub.call(
+      'POST',
+      '/agent/reload',
+      body: {'project': project?.root},
+      timeout: const Duration(seconds: 90),
+    );
+    final via = answer?['via'];
+    if (answer?['reloaded'] == true) {
+      console.line('${console.green('✔')} Hot reloaded through ${via == 'fixkit run' ? '`fixkit run`' : 'the app\'s Flutter session'}; the app confirmed it.');
+      return 0;
+    }
+    if (via == null) {
+      console.line('${console.red('✖')} fixkit does not know how to reach the app yet.');
+      console.line('  Start the app again (stop it, then run it; a hot reload is not enough), with fixkit $fixkitVersion in the app.');
+      console.line('  The debug console then says "fixkit: agent hot reload is on". `dart run fixkit status` lists the app under "Agent hot reload".');
+      return 1;
+    }
+    console.line('${console.red('✖')} Hot reload failed: ${answer?['error'] ?? 'no confirmation from the app'}');
+    return 1;
+  } catch (error) {
+    console.line('${console.red('✖')} $error');
     return 1;
   } finally {
     hub.close();

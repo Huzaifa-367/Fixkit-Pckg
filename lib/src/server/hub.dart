@@ -54,10 +54,15 @@ class AgentSession {
 /// A running app's Flutter session, as the app described it: where its Dart
 /// Development Service listens on this computer, and its main isolate.
 class AppSession {
-  AppSession(this.service, this.isolateId);
+  AppSession(this.service, this.isolateId, {this.direct = false, this.platform});
 
   final Uri service;
   final String? isolateId;
+
+  /// [service] is the app's own VM service (a run without DDS), as the
+  /// device sees it: on Android it is reached through `adb forward`.
+  final bool direct;
+  final String? platform;
   DateTime seen = DateTime.now();
 
   Map<String, Object?> toJson() => {'service': service.toString(), 'seen': seen.toIso8601String()};
@@ -94,7 +99,7 @@ class FixHub {
     this.reloadWait = const Duration(seconds: 10),
     this.adbInterval = const Duration(seconds: 3),
     this.staleAfter = const Duration(minutes: 15),
-    this.autoReloadDelay = const Duration(milliseconds: 1200),
+    this.autoReloadDelay = const Duration(milliseconds: 2500),
     FlutterReloader? reloader,
     Log? log,
   })  : settings = settings ?? FixkitSettings.load(),
@@ -125,6 +130,17 @@ class FixHub {
   /// Reloads in flight by project, with when each started.
   final Map<String, ({Future<ReloadResult> future, DateTime started})> _reloading = {};
   final Map<String, Timer> _autoReloadTimers = {};
+
+  /// The `lib` folders of projects whose app fixkit can hot reload, watched
+  /// so an edit by any agent (with or without a fix report) reloads the app.
+  final Map<String, _ProjectWatch> _appWatches = {};
+  final Map<String, DateTime> _projectEditAt = {};
+
+  /// Per project, the newest edit time an app reload is known to include:
+  /// a reload signal covers edits up to when that reload began (or now, when
+  /// fixkit did not start it). Whatever did the reload: the editor's save,
+  /// its reload button, fixkit.
+  final Map<String, DateTime> _reloadedUpTo = {};
   final Log _log;
 
   final List<HttpServer> _servers = [];
@@ -194,6 +210,9 @@ class FixHub {
       timer.cancel();
     }
     _autoReloadTimers.clear();
+    final appWatches = [..._appWatches.values];
+    _appWatches.clear();
+    await Future.wait([for (final watch in appWatches) watch.cancel()]);
     _housekeeping?.cancel();
     _adbTimer?.cancel();
     _editTimer?.cancel();
@@ -380,7 +399,14 @@ class FixHub {
     final body = await _json(request);
     final kind = '${body['kind'] ?? 'reload'}';
     final now = DateTime.now();
-    _rememberApp(body['flutterSession']);
+    final appFile = body['appFile'] is String ? pathFromLocation(body['appFile'] as String) : null;
+    final appProject = appFile == null ? null : (_knownRoots().where((root) => isWithin(root, appFile)).firstOrNull ?? _finder.rootOf(appFile));
+    _rememberApp(body['flutterSession'], project: appProject);
+    // The app found its Flutter session after launching: nothing reloaded.
+    if (kind == 'session') return _reply(request, HttpStatus.ok, {'ok': true});
+    for (final project in appProject != null ? [appProject] : appSessions.keys.toList()) {
+      _reloadedUpTo[project] = _reloading[project]?.started ?? now;
+    }
 
     for (final report in reports.values) {
       switch (report.status) {
@@ -681,10 +707,11 @@ class FixHub {
     if (current != null) {
       // Join the reload in flight, unless the agent edited since it began:
       // then reload again once it is done, so the last edit is on screen.
-      final editedSince = reports.values.any((report) =>
-          (project == null || report.projectRoot == project) &&
-          report.lastEditAt != null &&
-          report.lastEditAt!.isAfter(current.started));
+      final editedSince = (_projectEditAt[key]?.isAfter(current.started) ?? false) ||
+          reports.values.any((report) =>
+              (project == null || report.projectRoot == project) &&
+              report.lastEditAt != null &&
+              report.lastEditAt!.isAfter(current.started));
       return editedSince ? current.future.then((_) => _reloadApp(project, mark: mark)) : current.future;
     }
     final via = runner != null ? 'fixkit run' : 'flutter';
@@ -708,12 +735,12 @@ class FixHub {
       } else {
         var session = app!;
         _log('hot reload through the Flutter session at ${session.service.authority}');
-        var outcome = await reloader.reload(session.service, isolateId: session.isolateId);
+        var outcome = await _reloadThrough(session);
         final newest = _lastApp;
         if (outcome.unreachable && newest != null && newest != session) {
           // The app restarted since this session was noted: try its newest.
           session = newest;
-          outcome = await reloader.reload(session.service, isolateId: session.isolateId);
+          outcome = await _reloadThrough(session);
         }
         if (outcome.unreachable && project != null && appSessions[project] == session) {
           appSessions.remove(project);
@@ -742,22 +769,77 @@ class FixHub {
     return future;
   }
 
+  Future<ReloadOutcome> _reloadThrough(AppSession session) async {
+    var service = session.service;
+    if (session.direct && session.platform == 'android') {
+      final port = await tools.adbForwardedPort(service.port);
+      if (port == null) return const ReloadOutcome.unreachable('no adb forward to the app\'s VM service (run without DDS)');
+      service = service.replace(port: port);
+    }
+    return reloader.reload(service, isolateId: session.isolateId);
+  }
+
   /// Remembers how to reach an app's Flutter session. Only addresses on this
   /// computer are kept: the hub never connects elsewhere on an app's word.
   void _rememberApp(Object? session, {String? project}) {
     if (session is! Map) return;
-    final service = Uri.tryParse('${session['dds'] ?? ''}');
+    final direct = session['dds'] == null && session['vm'] != null;
+    final service = Uri.tryParse('${session['dds'] ?? session['vm'] ?? ''}');
     if (service == null || !const {'ws', 'wss', 'http'}.contains(service.scheme)) return;
     if (!const {'127.0.0.1', 'localhost', '::1'}.contains(service.host)) return;
     // DDS addresses look like /<code>=/ (or / without auth codes).
     if (!RegExp(r'^/([A-Za-z0-9_\-=]+/)?(ws)?$').hasMatch(service.path)) return;
     final isolate = session['isolate'];
-    final app = AppSession(service, isolate is String ? isolate : null);
+    final platform = session['platform'];
+    final app = AppSession(service, isolate is String ? isolate : null,
+        direct: direct, platform: platform is String ? platform : null);
     _lastApp = app;
     // A launch says nothing about the project: it is the sole open one, or
     // the same app as the only session known so far (restarted).
     final key = project ?? _soleProject() ?? (appSessions.length == 1 ? appSessions.keys.single : null);
-    if (key != null) appSessions[key] = app;
+    if (key == null) return;
+    final known = appSessions[key]?.service == service;
+    appSessions[key] = app;
+    if (!known) _log('app of $key can be hot reloaded through its Flutter session (${service.authority})');
+    _watchApp(key);
+  }
+
+  /// Watches [project]'s `lib` so the agent's edits hot reload its app.
+  void _watchApp(String project) {
+    if (!settings.autoReload || _closing || _appWatches.containsKey(project)) return;
+    final lib = Directory(joinPath(project, 'lib'));
+    try {
+      if (lib.existsSync()) _appWatches[project] = _ProjectWatch(lib, (file) => _projectEdited(project, file));
+    } catch (_) {
+      // No file watching here: hot_reload and complete_fix still reload.
+    }
+  }
+
+  /// A Dart file changed in [project]. Once the edits pause, the app is hot
+  /// reloaded, unless something (the editor's reload on save) already did.
+  void _projectEdited(String project, String file) {
+    final at = _modified(file) ?? DateTime.now();
+    final last = _projectEditAt[project];
+    if (last == null || at.isAfter(last)) _projectEditAt[project] = at;
+    for (final report in reports.values) {
+      if (report.projectRoot == project && (report.status == FixStatus.fixing || report.status == FixStatus.reloading)) {
+        _noteEdit(report, file);
+      }
+    }
+    _autoReloadTimers.remove(project)?.cancel();
+    _autoReloadTimers[project] = Timer(autoReloadDelay, () {
+      _autoReloadTimers.remove(project);
+      if (_closing || !settings.autoReload) return;
+      final edited = _projectEditAt[project];
+      final reloaded = _reloadedUpTo[project];
+      if (edited == null || (reloaded != null && !reloaded.isBefore(edited))) return;
+      // complete_fix is reloading this project's app itself.
+      if (reports.values.any((report) => report.projectRoot == project && report.reloadWaiter != null)) return;
+      _log('agent edit in $project: hot reloading');
+      // Quietly: the card shows "Hot reloaded" when it lands, and a compile
+      // error mid-edit is not worth a line.
+      unawaited(_reloadApp(project, mark: false));
+    });
   }
 
   /// The project's app session; else the newest one, when it is the only
@@ -769,19 +851,6 @@ class FixHub {
     if (last == null) return null;
     final others = appSessions.values.where((app) => app.service != last.service).toList();
     return others.isEmpty ? last : null;
-  }
-
-  /// After the agent's edits pause, hot reload the app so each change shows
-  /// as it is made, even when the agent never reloads.
-  void _scheduleAutoReload(FixReport report) {
-    if (!settings.autoReload || _closing) return;
-    final key = report.projectRoot ?? '';
-    _autoReloadTimers.remove(key)?.cancel();
-    _autoReloadTimers[key] = Timer(autoReloadDelay, () {
-      _autoReloadTimers.remove(key);
-      if (_closing || report.status != FixStatus.fixing || report.reloadedSinceEdit) return;
-      unawaited(_reloadApp(report.projectRoot));
-    });
   }
 
   static String _short(String text) {
@@ -796,6 +865,7 @@ class FixHub {
     final project = normalizePath('${body['project']}');
     runners.putIfAbsent(project, () => RunnerSession(project)).lastSeen = DateTime.now();
     _log('runner for $project');
+    _watchApp(project);
     if (settings.lan) _writeDefines(project);
     _reply(request, HttpStatus.ok, {'ok': true, 'lan': settings.lan, if (settings.lan) ..._lanDefines()});
   }
@@ -1010,7 +1080,6 @@ class FixHub {
     final at = _modified(file) ?? DateTime.now();
     final last = report.lastEditAt;
     if (last == null || at.isAfter(last)) report.lastEditAt = at;
-    _scheduleAutoReload(report);
     final path = _canonical(file);
     if (!report.edited.add(path)) return;
     report.note('Edited ${path.split('/').last}');
