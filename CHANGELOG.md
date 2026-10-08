@@ -4,6 +4,8 @@ All notable changes to fixkit. The format follows [Keep a Changelog](https://kee
 
 ## Unreleased
 
+## 0.1.6
+
 ### Fixed
 - **"The fixkit hub did not start" now says why.**
   - The hub's own output, compile errors and crashes included, goes to `~/.fixkit/hub.log`. The message shows its last lines.
