@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/rendering.dart';
@@ -282,6 +281,11 @@ FixInspection inspectAt(Offset position, int viewId) {
 /// whether or not it takes touches: the topmost child at each level, as hit
 /// testing would pick, but by bounds alone.
 Element? _appElementAt(Element root, Offset touch) {
+  final delegate = InspectorSerializationDelegate(
+    service: WidgetInspectorService.instance,
+    subtreeDepth: 0,
+    includeProperties: false,
+  );
   final tracking = _isTracking();
   Element? best;
   var bestDepth = -1;
@@ -308,7 +312,7 @@ Element? _appElementAt(Element root, Offset touch) {
     if (!contains && !overflows(element)) return false;
     var found = false;
     if (rect != null && contains && depth > bestDepth && element != root) {
-      final location = tracking ? _creationLocations.of(element) : null;
+      final location = tracking ? _creationLocation(element, delegate) : null;
       if (location != null && looksLikeAppCode(location.file) && !_isSpacer(element.widget)) {
         best = element;
         bestDepth = depth;
@@ -359,6 +363,12 @@ FixInspection inspectElement(Element hit, Offset touch) => _inspect(hit, touch).
 
 ({FixInspection inspection, Element? pressed}) _inspect(Element hit, Offset touch) {
   final tracking = _isTracking();
+  // One delegate for the whole walk.
+  final delegate = InspectorSerializationDelegate(
+    service: WidgetInspectorService.instance,
+    subtreeDepth: 0,
+    includeProperties: false,
+  );
   final chain = <FixFrame>[];
   final elements = <Element>[];
   ({String name, FixFrame frame, int chainIndex})? named;
@@ -370,7 +380,7 @@ FixInspection inspectElement(Element hit, Offset touch) => _inspect(hit, touch).
     walked++;
     final widget = element.widget;
     if (widget is FixKitChrome) return;
-    final location = tracking ? _creationLocations.of(element) : null;
+    final location = tracking ? _creationLocation(element, delegate) : null;
     final frame = FixFrame(
       widget: _typeName(widget),
       file: location?.file,
@@ -379,31 +389,19 @@ FixInspection inspectElement(Element hit, Offset touch) => _inspect(hit, touch).
       text: _ownText(widget),
     );
 
-    if (widget is FixScreen && screen == null) {
-      screen = widget.name;
-    }
-    if (screenGuess == null &&
-        location != null &&
-        looksLikeAppCode(location.file)) {
+    if (widget is FixScreen && screen == null) screen = widget.name;
+    if (screenGuess == null && location != null && looksLikeAppCode(location.file)) {
       final type = frame.widget;
-      if (type.endsWith('Screen') ||
-          type.endsWith('Page') ||
-          type.endsWith('View')) {
-        screenGuess = type;
-      }
+      if (type.endsWith('Screen') || type.endsWith('Page') || type.endsWith('View')) screenGuess = type;
     }
 
     // With creation tracking every widget has a location, Flutter's own
     // included: keep the deepest one and the app's own widgets. Without it,
     // keep the nearest widgets by type alone.
     final isApp = location != null && looksLikeAppCode(location.file);
-    final keep = tracking
-        ? (isApp || widget is FixName || (location != null && chain.isEmpty))
-        : chain.length < 25;
+    final keep = tracking ? (isApp || widget is FixName || (location != null && chain.isEmpty)) : chain.length < 25;
     if (keep && chain.length < _maxChain) {
-      if (widget is FixName && named == null) {
-        named = (name: widget.name, frame: frame, chainIndex: chain.length);
-      }
+      if (widget is FixName && named == null) named = (name: widget.name, frame: frame, chainIndex: chain.length);
       chain.add(frame);
       elements.add(element);
     }
@@ -486,7 +484,12 @@ FixInspection inspectElement(Element hit, Offset touch) => _inspect(hit, touch).
 /// tells the hub which project the app is.
 String? creationFileOf(Element element) {
   if (!_isTracking()) return null;
-  return _creationLocations.of(element)?.file;
+  final delegate = InspectorSerializationDelegate(
+    service: WidgetInspectorService.instance,
+    subtreeDepth: 0,
+    includeProperties: false,
+  );
+  return _creationLocation(element, delegate)?.file;
 }
 
 bool _isTracking() {
@@ -497,33 +500,23 @@ bool _isTracking() {
   }
 }
 
-/// Reads widget creation locations through [WidgetInspectorService]'s protected
-/// inspector API — the same JSON DevTools uses.
-final class _CreationLocations with WidgetInspectorService {
-  static final instance = _CreationLocations();
-  static const _group = 'fixkit';
-
-  ({String file, int line, int column})? of(Element element) {
-    selection.currentElement = element;
-    try {
-      final decoded = jsonDecode(getSelectedWidget(null, _group));
-      if (decoded is! Map) return null;
-      final location = decoded['creationLocation'];
-      if (location is! Map) return null;
-      final file = location['file'];
-      final line = location['line'];
-      final column = location['column'];
-      if (file is! String || line is! int) return null;
-      return (file: file, line: line, column: column is int ? column : 0);
-    } catch (_) {
-      return null;
-    } finally {
-      disposeGroup(_group);
-    }
+/// The place [element]'s widget was constructed, from the same data the
+/// Flutter inspector shows. Only available in debug builds with widget creation
+/// tracking, which `flutter run` turns on by default.
+({String file, int line, int column})? _creationLocation(Element element, InspectorSerializationDelegate delegate) {
+  try {
+    final json = element.toDiagnosticsNode().toJsonMap(delegate);
+    final location = json['creationLocation'];
+    if (location is! Map) return null;
+    final file = location['file'];
+    final line = location['line'];
+    final column = location['column'];
+    if (file is! String || line is! int) return null;
+    return (file: file, line: line, column: column is int ? column : 0);
+  } catch (_) {
+    return null;
   }
 }
-
-final _creationLocations = _CreationLocations.instance;
 
 String _typeName(Widget widget) {
   final name = widget.runtimeType.toString();
@@ -636,11 +629,7 @@ List<({String text, Rect rect})> _textsInside(Element element) {
 Rect? _rectOf(Element element) {
   try {
     final renderObject = element.findRenderObject();
-    if (renderObject is! RenderBox ||
-        !renderObject.attached ||
-        !renderObject.hasSize) {
-      return null;
-    }
+    if (renderObject is! RenderBox || !renderObject.attached || !renderObject.hasSize) return null;
     final rect = MatrixUtils.transformRect(
       renderObject.getTransformTo(null),
       Offset.zero & renderObject.size,

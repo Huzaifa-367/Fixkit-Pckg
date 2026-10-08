@@ -306,6 +306,7 @@ class IoFixConnection implements FixConnection {
         'kind': kind,
         'protocol': fixkitProtocol,
         'version': fixkitVersion,
+        'platform': Platform.operatingSystem,
         if (appFile != null) 'appFile': appFile,
         if (session != null) 'flutterSession': session,
       });

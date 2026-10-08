@@ -145,17 +145,44 @@ Future<int> runDoctor(List<String> arguments, Console console) async {
         } else {
           console.warn('Agent', '$label is connected but not watching: say "watch for fixes" in its chat');
         }
+        final agentVersion = Semver.tryParse('${agent['version']}');
+        if (agentVersion == null || agentVersion < currentVersion) {
+          broken('Agent', '$label runs ${agentVersion == null ? 'an older fixkit' : 'fixkit $agentVersion'}, not $fixkitVersion',
+              'Reload the editor window (Cursor/VS Code: "Developer: Reload Window") so it starts the new fixkit.');
+        }
       }
     }
     final apps = state?['apps'] is Map ? (state!['apps'] as Map).keys.whereType<String>() : const <String>[];
     final runners = ((state?['runners'] as List?) ?? const []).whereType<Map>().map((runner) => '${runner['project']}');
     bool ours(String root) => isWithin(root, project.root) || isWithin(project.root, root);
+    final app = state?['app'] is Map ? state!['app'] as Map : null;
+    if (app == null) {
+      console.warn('App', 'has not reached the hub since it started: run the app (badge says "fixkit offline"? see Android/iPhone below)');
+    } else {
+      final appVersion = Semver.tryParse('${app['version']}');
+      final seen = DateTime.tryParse('${app['at']}');
+      final ago = seen == null ? '' : ', last heard ${DateTime.now().difference(seen).inSeconds}s ago';
+      console.ok('App', '${app['platform'] ?? 'unknown platform'}, fixkit ${app['version'] ?? '?'}$ago');
+      if (appVersion != null && appVersion < currentVersion) {
+        broken('App', 'runs fixkit $appVersion, older than $fixkitVersion', 'Stop the app and run it again (a hot reload keeps the old fixkit).');
+      }
+    }
     if (runners.any(ours)) {
       console.ok('Hot reload', 'the agent reloads the app through `fixkit run`');
     } else if (apps.any(ours)) {
-      console.ok('Hot reload', 'the agent reloads the app through its Flutter session (any editor)');
+      console.ok('Hot reload', 'through the app\'s Flutter session; agent edits reload by themselves${state?['autoReload'] == false ? ' (autoReload is off in ~/.fixkit/config.json)' : ''}');
+    } else if (app != null && app['session'] != true) {
+      broken('Hot reload', 'the app did not find its Flutter session', 'Run the app from the IDE or `flutter run` (debug mode). The debug console says why at launch.');
     } else {
-      console.warn('Hot reload', 'no running app known yet: start the app (a full start, not a hot reload); then `dart run fixkit reload` checks it');
+      console.warn('Hot reload', 'no running app known yet: start the app (a full start, not a hot reload)');
+    }
+    final last = state?['lastReload'] is Map ? state!['lastReload'] as Map : null;
+    if (last != null) {
+      if (last['reloaded'] == true) {
+        console.ok('Last reload', 'worked (${last['via']})');
+      } else {
+        console.warn('Last reload', 'failed: ${last['error']}');
+      }
     }
   }
   hub.close();

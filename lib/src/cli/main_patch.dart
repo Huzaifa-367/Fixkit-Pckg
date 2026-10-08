@@ -1,7 +1,6 @@
 /// Wraps the widget passed to `runApp(...)` in `FixKit(child: ...)`, and
 /// undoes it. Works on the source text: comments, strings and formatting
 /// elsewhere stay as they are.
-library;
 
 const String fixkitImport = "import 'package:fixkit/fixkit.dart';";
 
@@ -70,9 +69,7 @@ class _Scanner {
   bool _isStringStart(int i) {
     final c = s[i];
     if (c == '"' || c == "'") return true;
-    if ((c == 'r' || c == 'R') &&
-        i + 1 < s.length &&
-        (s[i + 1] == '"' || s[i + 1] == "'")) {
+    if ((c == 'r' || c == 'R') && i + 1 < s.length && (s[i + 1] == '"' || s[i + 1] == "'")) {
       return i == 0 || !_isIdentifierChar(s[i - 1]);
     }
     return false;
@@ -146,9 +143,7 @@ class _Scanner {
       if (at == -1) break;
       from = at + word.length;
       if (!code[at]) continue;
-      if (at > 0 && (_isIdentifierChar(s[at - 1]) || s[at - 1] == r'$')) {
-        continue;
-      }
+      if (at > 0 && (_isIdentifierChar(s[at - 1]) || s[at - 1] == r'$')) continue;
       var j = at + word.length;
       if (j < s.length && _isIdentifierChar(s[j])) continue;
       while (j < s.length && ' \t\r\n'.contains(s[j])) {
@@ -187,9 +182,7 @@ PatchResult wrapRunApp(String source) {
     if (close == -1) continue;
     final inner = source.substring(open + 1, close);
     var argument = inner.trim();
-    if (argument.endsWith(',')) {
-      argument = argument.substring(0, argument.length - 1).trimRight();
-    }
+    if (argument.endsWith(',')) argument = argument.substring(0, argument.length - 1).trimRight();
     if (argument.isEmpty) continue;
     if (RegExp(r'^(const\s+)?FixKit\s*\(').hasMatch(argument)) continue;
     result = result.replaceRange(open + 1, close, 'FixKit(child: $argument)');
@@ -227,8 +220,7 @@ PatchResult unwrapFixKit(String source) {
 
 /// The text of the named argument [name] of the call whose parentheses are at
 /// [open] and [close].
-String? _namedArgument(
-    String s, _Scanner scanner, int open, int close, String name) {
+String? _namedArgument(String s, _Scanner scanner, int open, int close, String name) {
   var depth = 0;
   var start = open + 1;
   final parts = <(int, int)>[];
@@ -253,33 +245,21 @@ String? _namedArgument(
 
 /// Adds the fixkit import after the last import, if it is not there.
 String addImport(String source) {
-  if (source.contains(fixkitImport) ||
-      source.contains('import "package:fixkit/fixkit.dart";')) {
-    return source;
-  }
-  final imports =
-      RegExp(r'''^import\s+['"][^'"]+['"][^;]*;[ \t]*$''', multiLine: true)
-          .allMatches(source)
-          .toList();
+  if (source.contains(fixkitImport) || source.contains('import "package:fixkit/fixkit.dart";')) return source;
+  final imports = RegExp(r'''^import\s+['"][^'"]+['"][^;]*;[ \t]*$''', multiLine: true).allMatches(source).toList();
   if (imports.isNotEmpty) {
     final end = imports.last.end;
     return source.replaceRange(end, end, '\n$fixkitImport');
   }
-  final library =
-      RegExp(r'^library[^;]*;[ \t]*$', multiLine: true).firstMatch(source);
-  if (library != null) {
-    return source.replaceRange(library.end, library.end, '\n\n$fixkitImport');
-  }
+  final library = RegExp(r'^library[^;]*;[ \t]*$', multiLine: true).firstMatch(source);
+  if (library != null) return source.replaceRange(library.end, library.end, '\n\n$fixkitImport');
   return '$fixkitImport\n\n$source';
 }
 
 String _removeImportIfUnused(String source) {
-  final withoutImport = source.replaceAll(
-      RegExp(r'''^import\s+['"]package:fixkit/fixkit\.dart['"];[ \t]*\r?\n''',
-          multiLine: true),
-      '');
+  final withoutImport = source
+      .replaceAll(RegExp(r'''^import\s+['"]package:fixkit/fixkit\.dart['"];[ \t]*\r?\n''', multiLine: true), '');
   final scanner = _Scanner(withoutImport);
-  final used = ['FixKit', 'FixName', 'FixScreen']
-      .any((name) => scanner.calls(name).isNotEmpty);
+  final used = ['FixKit', 'FixName', 'FixScreen'].any((name) => scanner.calls(name).isNotEmpty);
   return used ? source : withoutImport;
 }

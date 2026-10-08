@@ -4,6 +4,14 @@ All notable changes to fixkit. The format follows [Keep a Changelog](https://kee
 
 ## Unreleased
 
+### Added
+- **`doctor` shows the whole hot reload chain** in one place:
+  - which fixkit the editor's MCP server, the hub and the running app each use, and which needs reloading or restarting;
+  - whether the app found its Flutter session;
+  - whether `autoReload` is on;
+  - what the last hot reload came to, and its error if it failed.
+- The MCP server tells the hub its version, and the app tells it its platform.
+
 ## 0.1.4
 
 ### Fixed

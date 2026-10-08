@@ -150,11 +150,9 @@ class FixkitMcpServer {
           unawaited(_connect());
           return;
         case 'notifications/initialized':
-          await _initialized();
-          return;
+          return _initialized();
         case 'notifications/roots/list_changed':
-          await _loadRoots();
-          return;
+          return _loadRoots();
         case 'notifications/cancelled':
           final requestId = params['requestId'];
           if (requestId != null) _cancelled.add(requestId);
@@ -241,6 +239,7 @@ class FixkitMcpServer {
         'name': _clientName,
         'projects': projects.toList(),
         'wildcard': wildcard && projects.isEmpty,
+        'version': fixkitVersion,
       });
       _registered = true;
     } catch (error) {

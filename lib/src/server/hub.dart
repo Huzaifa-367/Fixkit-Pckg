@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import '../protocol.dart';
 import 'host_tools.dart';
@@ -22,6 +21,9 @@ class AgentSession {
   /// Takes reports from any project no other agent claims.
   bool wildcard;
   DateTime lastSeen = DateTime.now();
+
+  /// The fixkit version of its MCP server (null before 0.1.11).
+  String? version;
 
   /// A long poll waiting for the next report.
   Completer<FixReport?>? waiter;
@@ -48,6 +50,7 @@ class AgentSession {
         'waiting': isWaiting,
         'watching': isWatching(DateTime.now()),
         'lastSeen': lastSeen.toIso8601String(),
+        if (version != null) 'version': version,
       };
 }
 
@@ -135,6 +138,13 @@ class FixHub {
   /// so an edit by any agent (with or without a fix report) reloads the app.
   final Map<String, _ProjectWatch> _appWatches = {};
   final Map<String, DateTime> _projectEditAt = {};
+
+  /// The app that signalled last, for `doctor`: its fixkit version, platform
+  /// and whether it found its Flutter session.
+  Map<String, Object?>? _lastAppInfo;
+
+  /// What the last hot reload fixkit tried came to, for `doctor`.
+  Map<String, Object?>? _lastReload;
 
   /// Per project, the newest edit time an app reload is known to include:
   /// a reload signal covers edits up to when that reload began (or now, when
@@ -402,6 +412,14 @@ class FixHub {
     final appFile = body['appFile'] is String ? pathFromLocation(body['appFile'] as String) : null;
     final appProject = appFile == null ? null : (_knownRoots().where((root) => isWithin(root, appFile)).firstOrNull ?? _finder.rootOf(appFile));
     _rememberApp(body['flutterSession'], project: appProject);
+    _lastAppInfo = {
+      'version': body['version'],
+      'platform': body['platform'],
+      'project': appProject,
+      'session': body['flutterSession'] is Map,
+      'kind': kind,
+      'at': now.toIso8601String(),
+    };
     // The app found its Flutter session after launching: nothing reloaded.
     if (kind == 'session') return _reply(request, HttpStatus.ok, {'ok': true});
     for (final project in appProject != null ? [appProject] : appSessions.keys.toList()) {
@@ -518,15 +536,17 @@ class FixHub {
     };
     final name = '${body['name'] ?? 'agent'}';
     final wildcard = body['wildcard'] == true;
+    final version = body['version'] is String ? body['version'] as String : null;
     final agent = agents[id];
     if (agent == null) {
-      agents[id] = AgentSession(id: id, name: name, projects: projects, wildcard: wildcard);
+      agents[id] = AgentSession(id: id, name: name, projects: projects, wildcard: wildcard)..version = version;
       _log('agent $name connected for ${projects.isEmpty ? 'any project' : projects.join(', ')}');
     } else {
       agent
         ..name = name
         ..projects = projects
         ..wildcard = wildcard
+        ..version = version
         ..lastSeen = DateTime.now();
     }
     if (settings.lan) projects.forEach(_writeDefines);
@@ -760,7 +780,15 @@ class FixHub {
           if (error != null) active.note('Hot reload failed: ${_short(error)}', kind: 'error');
         }
       }
-      return (via: via, reloaded: reloaded, error: reloaded ? null : (error ?? 'the app did not confirm the reload'));
+      final result = (via: via, reloaded: reloaded, error: reloaded ? null : (error ?? 'the app did not confirm the reload'));
+      _lastReload = {
+        'at': DateTime.now().toIso8601String(),
+        'project': project,
+        'via': via,
+        'reloaded': reloaded,
+        if (result.error != null) 'error': result.error,
+      };
+      return result;
     }();
     _reloading[key] = (future: future, started: DateTime.now());
     unawaited(future.whenComplete(() {
@@ -1213,6 +1241,9 @@ class FixHub {
         'agents': [for (final agent in agents.values) agent.toJson()],
         'runners': [for (final runner in runners.values) runner.toJson()],
         'apps': {for (final entry in appSessions.entries) entry.key: entry.value.toJson()},
+        if (_lastAppInfo != null) 'app': _lastAppInfo,
+        if (_lastReload != null) 'lastReload': _lastReload,
+        'autoReload': settings.autoReload,
         'reports': [for (final report in reports.values) report.summary()],
         'android': tools.reversedDevices.toList(),
         'adb': tools.findAdb(),
