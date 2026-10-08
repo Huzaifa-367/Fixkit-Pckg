@@ -4,6 +4,8 @@ All notable changes to fixkit. The format follows [Keep a Changelog](https://kee
 
 ## Unreleased
 
+## 0.1.3
+
 ### Fixed
 - **Presses that missed.** A press on a gap (between an avatar and a name, beside a heading, the empty part of a header row) or on a widget that takes no touches fell through to whatever was behind it. Often that was the whole app, so the composer opened with nothing selected. fixkit now looks for the app's own widget drawn under the finger: the Row, the header or the Text. Empty spacers (`SizedBox`, `Spacer`) count as the widget around them. Widgets that stick out of a `Stack` (an avatar over a banner) and pinned headers in scroll views are found too.
 - **fixkit's own widgets never count as the app's,** even when fixkit is a path dependency to a clone.
