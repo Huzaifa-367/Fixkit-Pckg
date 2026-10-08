@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/rendering.dart';
@@ -19,7 +20,8 @@ class FixKitChrome extends StatelessWidget {
 /// One widget in the chain from the pressed widget up to the root, with the
 /// place in the source where it was constructed.
 class FixFrame {
-  const FixFrame({required this.widget, this.file, this.line, this.column, this.text});
+  const FixFrame(
+      {required this.widget, this.file, this.line, this.column, this.text});
 
   /// The widget's class name.
   final String widget;
@@ -54,7 +56,12 @@ class FixFrame {
 /// ancestors written in the app's own code (a Row, a Column, a card...).
 @immutable
 class FixScope {
-  const FixScope({required this.frame, required this.rect, required this.chainIndex, this.name, this.text});
+  const FixScope(
+      {required this.frame,
+      required this.rect,
+      required this.chainIndex,
+      this.name,
+      this.text});
 
   final FixFrame frame;
 
@@ -98,7 +105,8 @@ class FixInspection {
   });
 
   /// Nothing could be inspected: only the touch point is known.
-  factory FixInspection.empty(Offset touch) => FixInspection(touch: touch, chain: const [], tracking: false);
+  factory FixInspection.empty(Offset touch) =>
+      FixInspection(touch: touch, chain: const [], tracking: false);
 
   /// Where the finger was, in logical pixels of the view.
   final Offset touch;
@@ -130,7 +138,8 @@ class FixInspection {
   final List<String> nearby;
 
   /// The selected scope.
-  FixScope? get scope => scopes.isEmpty ? null : scopes[selected.clamp(0, scopes.length - 1)];
+  FixScope? get scope =>
+      scopes.isEmpty ? null : scopes[selected.clamp(0, scopes.length - 1)];
 
   /// The widget the finger was on.
   FixScope? get pressed => scopes.isEmpty ? null : scopes.first;
@@ -193,7 +202,8 @@ class FixInspection {
           'index': selected,
           'widgets': [for (final scope in scopes) scope.label],
         },
-      if (named != null && _insideNamed) 'named': {'name': named!.name, ...named!.frame.toJson()},
+      if (named != null && _insideNamed)
+        'named': {'name': named!.name, ...named!.frame.toJson()},
       if (route != null) 'route': route,
       if (screen != null) 'screen': screen,
       if (nearby.isNotEmpty) 'nearby': nearby,
@@ -254,12 +264,6 @@ FixInspection inspectAt(Offset position, int viewId) {
 /// Inspects [hit], the deepest element under [touch], and its ancestors.
 FixInspection inspectElement(Element hit, Offset touch) {
   final tracking = _isTracking();
-  // One delegate for the whole walk.
-  final delegate = InspectorSerializationDelegate(
-    service: WidgetInspectorService.instance,
-    subtreeDepth: 0,
-    includeProperties: false,
-  );
   final chain = <FixFrame>[];
   final elements = <Element>[];
   ({String name, FixFrame frame, int chainIndex})? named;
@@ -271,7 +275,7 @@ FixInspection inspectElement(Element hit, Offset touch) {
     walked++;
     final widget = element.widget;
     if (widget is FixKitChrome) return;
-    final location = tracking ? _creationLocation(element, delegate) : null;
+    final location = tracking ? _creationLocations.of(element) : null;
     final frame = FixFrame(
       widget: _typeName(widget),
       file: location?.file,
@@ -280,19 +284,31 @@ FixInspection inspectElement(Element hit, Offset touch) {
       text: _ownText(widget),
     );
 
-    if (widget is FixScreen && screen == null) screen = widget.name;
-    if (screenGuess == null && location != null && looksLikeAppCode(location.file)) {
+    if (widget is FixScreen && screen == null) {
+      screen = widget.name;
+    }
+    if (screenGuess == null &&
+        location != null &&
+        looksLikeAppCode(location.file)) {
       final type = frame.widget;
-      if (type.endsWith('Screen') || type.endsWith('Page') || type.endsWith('View')) screenGuess = type;
+      if (type.endsWith('Screen') ||
+          type.endsWith('Page') ||
+          type.endsWith('View')) {
+        screenGuess = type;
+      }
     }
 
     // With creation tracking every widget has a location, Flutter's own
     // included: keep the deepest one and the app's own widgets. Without it,
     // keep the nearest widgets by type alone.
     final isApp = location != null && looksLikeAppCode(location.file);
-    final keep = tracking ? (isApp || widget is FixName || (location != null && chain.isEmpty)) : chain.length < 25;
+    final keep = tracking
+        ? (isApp || widget is FixName || (location != null && chain.isEmpty))
+        : chain.length < 25;
     if (keep && chain.length < _maxChain) {
-      if (widget is FixName && named == null) named = (name: widget.name, frame: frame, chainIndex: chain.length);
+      if (widget is FixName && named == null) {
+        named = (name: widget.name, frame: frame, chainIndex: chain.length);
+      }
       chain.add(frame);
       elements.add(element);
     }
@@ -309,7 +325,8 @@ FixInspection inspectElement(Element hit, Offset touch) {
   final view = View.maybeOf(hit);
   final screenArea = view == null
       ? double.infinity
-      : (view.physicalSize.width / view.devicePixelRatio) * (view.physicalSize.height / view.devicePixelRatio);
+      : (view.physicalSize.width / view.devicePixelRatio) *
+          (view.physicalSize.height / view.devicePixelRatio);
   final scopes = <FixScope>[];
   Element? pressedElement;
   String? pressedText;
@@ -335,7 +352,8 @@ FixInspection inspectElement(Element hit, Offset touch) {
     String? text;
     if (pressedElement == null) {
       pressedElement = elements[i];
-      pressedText = _textAlong(hit, elements[i]) ?? _firstTextInside(elements[i]);
+      pressedText =
+          _textAlong(hit, elements[i]) ?? _firstTextInside(elements[i]);
       text = pressedText;
     } else {
       text = _ownText(widget) ?? _firstTextInside(elements[i]);
@@ -355,8 +373,10 @@ FixInspection inspectElement(Element hit, Offset touch) {
     final rect = _rectOf(elements.first) ?? _rectOf(hit);
     if (rect != null) {
       pressedElement = elements.first;
-      pressedText = _textAlong(hit, elements.first) ?? _firstTextInside(elements.first);
-      scopes.add(FixScope(frame: chain.first, rect: rect, chainIndex: 0, text: pressedText));
+      pressedText =
+          _textAlong(hit, elements.first) ?? _firstTextInside(elements.first);
+      scopes.add(FixScope(
+          frame: chain.first, rect: rect, chainIndex: 0, text: pressedText));
     }
   }
 
@@ -380,23 +400,33 @@ bool _isTracking() {
   }
 }
 
-/// The place [element]'s widget was constructed, from the same data the
-/// Flutter inspector shows. Only available in debug builds with widget creation
-/// tracking, which `flutter run` turns on by default.
-({String file, int line, int column})? _creationLocation(Element element, InspectorSerializationDelegate delegate) {
-  try {
-    final json = element.toDiagnosticsNode().toJsonMap(delegate);
-    final location = json['creationLocation'];
-    if (location is! Map) return null;
-    final file = location['file'];
-    final line = location['line'];
-    final column = location['column'];
-    if (file is! String || line is! int) return null;
-    return (file: file, line: line, column: column is int ? column : 0);
-  } catch (_) {
-    return null;
+/// Reads widget creation locations through [WidgetInspectorService]'s protected
+/// inspector API — the same JSON DevTools uses.
+final class _CreationLocations with WidgetInspectorService {
+  static final instance = _CreationLocations();
+  static const _group = 'fixkit';
+
+  ({String file, int line, int column})? of(Element element) {
+    selection.currentElement = element;
+    try {
+      final decoded = jsonDecode(getSelectedWidget(null, _group));
+      if (decoded is! Map) return null;
+      final location = decoded['creationLocation'];
+      if (location is! Map) return null;
+      final file = location['file'];
+      final line = location['line'];
+      final column = location['column'];
+      if (file is! String || line is! int) return null;
+      return (file: file, line: line, column: column is int ? column : 0);
+    } catch (_) {
+      return null;
+    } finally {
+      disposeGroup(_group);
+    }
   }
 }
+
+final _creationLocations = _CreationLocations.instance;
 
 String _typeName(Widget widget) {
   final name = widget.runtimeType.toString();
@@ -509,7 +539,11 @@ List<({String text, Rect rect})> _textsInside(Element element) {
 Rect? _rectOf(Element element) {
   try {
     final renderObject = element.findRenderObject();
-    if (renderObject is! RenderBox || !renderObject.attached || !renderObject.hasSize) return null;
+    if (renderObject is! RenderBox ||
+        !renderObject.attached ||
+        !renderObject.hasSize) {
+      return null;
+    }
     final rect = MatrixUtils.transformRect(
       renderObject.getTransformTo(null),
       Offset.zero & renderObject.size,

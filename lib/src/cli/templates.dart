@@ -1,4 +1,5 @@
 /// Files `fixkit init` writes into the project.
+library;
 
 const String launcherSource = '''
 // Written by `dart run fixkit init`. Editors start fixkit's MCP server with

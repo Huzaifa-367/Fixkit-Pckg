@@ -1,6 +1,7 @@
 /// Wraps the widget passed to `runApp(...)` in `FixKit(child: ...)`, and
 /// undoes it. Works on the source text: comments, strings and formatting
 /// elsewhere stay as they are.
+library;
 
 const String fixkitImport = "import 'package:fixkit/fixkit.dart';";
 

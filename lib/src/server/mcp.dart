@@ -150,9 +150,11 @@ class FixkitMcpServer {
           unawaited(_connect());
           return;
         case 'notifications/initialized':
-          return _initialized();
+          await _initialized();
+          return;
         case 'notifications/roots/list_changed':
-          return _loadRoots();
+          await _loadRoots();
+          return;
         case 'notifications/cancelled':
           final requestId = params['requestId'];
           if (requestId != null) _cancelled.add(requestId);
