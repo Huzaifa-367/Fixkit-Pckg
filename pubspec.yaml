@@ -3,7 +3,7 @@ description: >-
   Long press any widget in your running Flutter app, type what is wrong, and the
   AI agent in your editor (Cursor, VS Code, Antigravity, Windsurf, Claude Code,
   Gemini CLI) fixes the code and hot reloads it. Debug builds only.
-version: 0.1.3
+version: 0.1.4
 homepage: https://github.com/Huzaifa-367/Fixkit-Pckg
 repository: https://github.com/Huzaifa-367/Fixkit-Pckg
 issue_tracker: https://github.com/Huzaifa-367/Fixkit-Pckg/issues

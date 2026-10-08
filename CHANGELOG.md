@@ -4,6 +4,8 @@ All notable changes to fixkit. The format follows [Keep a Changelog](https://kee
 
 ## Unreleased
 
+## 0.1.4
+
 ### Fixed
 - **Android phones on USB showed "fixkit offline".**
   - The hub now checks every few seconds that the phone's `adb reverse` is still in place, and sets it again when `flutter run` or the IDE has restarted the adb server (which drops it).

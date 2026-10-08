@@ -12,7 +12,7 @@ Add fixkit to your app's `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  fixkit: ^0.1.3
+  fixkit: ^0.1.4
 ```
 
 Or from GitHub:
@@ -22,7 +22,7 @@ dependencies:
   fixkit:
     git:
       url: https://github.com/Huzaifa-367/Fixkit-Pckg.git
-      ref: v0.1.3
+      ref: v0.1.4
 ```
 
 Then:
